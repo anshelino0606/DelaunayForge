@@ -65,6 +65,10 @@ This repository uses a mix of submodules, vendored code, and CMake `FetchContent
 
 Each third-party dependency remains under its own license terms.
 
+## Acknowledgments
+
+Shoutout to [JeFFlidan](https://github.com/JeFFlidan) for work on the graphics engine.
+
 ## Open Source Release Notes
 
 This repository has a lot of active experimentation in it. For a first public release, the practical baseline is:
