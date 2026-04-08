@@ -1,0 +1,17 @@
+#ifndef LOG_CATEGORIES_H
+#define LOG_CATEGORIES_H
+
+#include "logger/logger_macros.h"
+
+
+DEFINE_LOG_CATEGORY(LogMath);
+DEFINE_LOG_CATEGORY(LogApplication);
+DEFINE_LOG_CATEGORY(LogGeometry);
+DEFINE_LOG_CATEGORY(LogRenderer);
+DEFINE_LOG_CATEGORY(LogEditor);
+DEFINE_LOG_CATEGORY(LogRHI);
+DEFINE_LOG_CATEGORY(LogReflection);
+DEFINE_LOG_CATEGORY(GUI);
+
+
+#endif // LOG_CATEGORIES_H

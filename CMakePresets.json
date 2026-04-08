@@ -1,0 +1,62 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 27,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "release-bgfx",
+      "inherits": "base",
+      "displayName": "Release (bgfx)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "USE_BGFX": "ON",
+        "USE_LLGL": "OFF"
+      }
+    },
+    {
+      "name": "release-llgl",
+      "inherits": "base",
+      "displayName": "Release (LLGL)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "USE_BGFX": "OFF",
+        "USE_LLGL": "ON"
+      }
+    },
+    {
+      "name": "debug-opengl",
+      "inherits": "base",
+      "displayName": "Debug (OpenGL fallback)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "USE_BGFX": "OFF",
+        "USE_LLGL": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release-bgfx",
+      "configurePreset": "release-bgfx"
+    },
+    {
+      "name": "release-llgl",
+      "configurePreset": "release-llgl"
+    },
+    {
+      "name": "debug-opengl",
+      "configurePreset": "debug-opengl"
+    }
+  ]
+}

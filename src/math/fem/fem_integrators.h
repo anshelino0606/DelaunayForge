@@ -1,0 +1,383 @@
+#ifndef FEM_INTEGRATORS
+#define FEM_INTEGRATORS
+
+#include "fem_mesh.h"
+#include "fem_element_p1.h"
+#include "math/differential_equation.h"
+#include "fem_quadrature.h"
+#include <vector>
+#include <cmath>
+
+namespace fem {
+
+struct NewmarkParams {
+    double beta;
+    double gamma;
+    
+    [[nodiscard]] consteval bool is_stable() const noexcept {
+        return gamma >= 0.5 && beta >= 0.25 * (0.5 + gamma) * (0.5 + gamma);
+    }
+    
+    [[nodiscard]] consteval bool is_second_order() const noexcept {
+        return gamma == 0.5;
+    }
+};
+
+inline constexpr NewmarkParams default_newmark{0.25, 0.5};
+static_assert(default_newmark.is_stable(), "Default Newmark parameters must be stable");
+static_assert(default_newmark.is_second_order(), "Default Newmark parameters should be second-order accurate");
+
+namespace detail {
+    [[nodiscard]] inline void compute_p1_gradients(
+        const FEMMesh::Node& P0,
+        const FEMMesh::Node& P1,
+        const FEMMesh::Node& P2,
+        double grad[3][2]) noexcept
+    {
+        const double dx1 = P1.x - P0.x, dy1 = P1.y - P0.y;
+        const double dx2 = P2.x - P0.x, dy2 = P2.y - P0.y;
+        const double det = dx1*dy2 - dx2*dy1;  // 2*Area
+
+        if (std::abs(det) <= 1e-14) [[unlikely]] {
+            grad[0][0] = grad[0][1] = 0.0;
+            grad[1][0] = grad[1][1] = 0.0;
+            grad[2][0] = grad[2][1] = 0.0;
+            return;
+        }
+
+        const double inv_det = 1.0 / det;
+        
+        grad[0][0] = (P1.y - P2.y) * inv_det;
+        grad[0][1] = (P2.x - P1.x) * inv_det;
+        
+        grad[1][0] = (P2.y - P0.y) * inv_det;
+        grad[1][1] = (P0.x - P2.x) * inv_det;
+        
+        grad[2][0] = (P0.y - P1.y) * inv_det;
+        grad[2][1] = (P1.x - P0.x) * inv_det;
+    }
+    
+    [[nodiscard]] constexpr int safe_quad_index(int q) noexcept {
+        return q;
+    }
+}
+
+template<typename Real>
+struct LocalIntegratorP1 {
+    const FEMProblem& P;
+    explicit LocalIntegratorP1(const FEMProblem& prob) : P(prob) {}
+
+    void element(const FEMMesh& mesh, const FEMMesh::Elem& E,
+                 Real (&Ke)[3][3], Real (&be)[3]) const
+    {
+        for (int i = 0; i < 3; ++i) {
+            be[i] = 0;
+            for (int j = 0; j < 3; ++j) Ke[i][j] = 0;
+        }
+        
+        const auto& P0 = mesh.nodes[E.v[0]];
+        const auto& P1 = mesh.nodes[E.v[1]];
+        const auto& P2 = mesh.nodes[E.v[2]];
+        
+        double grad[3][2];
+        detail::compute_p1_gradients(P0, P1, P2, grad);
+        
+        for (int q = 0; q < fem::TriQuad3::n; ++q) {
+            double x, y;
+            fem::tri_point(mesh, E,
+                          fem::TriQuad3::l1[q], 
+                          fem::TriQuad3::l2[q], 
+                          fem::TriQuad3::l3[q],
+                          x, y);
+            
+            const double aq = (double)P.a(x, y);
+            const double cq = (double)P.c(x, y);
+            const double fq = (double)P.f(x, y);
+            const double wq = fem::TriQuad3::w[q];
+            
+            const double N[3] = {
+                fem::TriQuad3::l1[q],
+                fem::TriQuad3::l2[q],
+                fem::TriQuad3::l3[q]
+            };
+            
+            // Stiffness: ∫ a(x) ∇φᵢ·∇φⱼ dx
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    double grad_dot = grad[i][0]*grad[j][0] + 
+                                     grad[i][1]*grad[j][1];
+                    Ke[i][j] += (Real)(wq * aq * grad_dot * E.area);
+                }
+            }
+            
+            // Mass: ∫ c(x) φᵢ φⱼ dx
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    Ke[i][j] += (Real)(wq * cq * N[i] * N[j] * E.area);
+                }
+            }
+            
+            // RHS: ∫ f(x) φᵢ dx
+            for (int i = 0; i < 3; ++i) {
+                be[i] += (Real)(wq * fq * N[i] * E.area);
+            }
+        }
+    }
+    
+    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
+                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
+    {
+        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+
+        const auto& A = mesh.nodes[e.a];
+        const auto& B = mesh.nodes[e.b];
+        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
+
+        if (e.type == fem::BCType::Neumann) {
+            const Real gN = (Real)e.gN;
+            rhs[e.a] += gN * (L * (Real)0.5);
+            rhs[e.b] += gN * (L * (Real)0.5);
+            return;
+        }
+
+        if (e.type == fem::BCType::Robin) {
+            const Real k = (Real)e.k;
+            const Real g = (Real)e.g;
+
+            const Real m00 = L * (Real)(2.0/6.0);
+            const Real m01 = L * (Real)(1.0/6.0);
+            const Real m11 = L * (Real)(2.0/6.0);
+
+            T.push_back({e.a, e.a, (double)(k * m00)});
+            T.push_back({e.a, e.b, (double)(k * m01)});
+            T.push_back({e.b, e.a, (double)(k * m01)});
+            T.push_back({e.b, e.b, (double)(k * m11)});
+
+            rhs[e.a] += g * (L * (Real)0.5);
+            rhs[e.b] += g * (L * (Real)0.5);
+        }
+    }
+};
+
+template<typename Real>
+struct HeatImplicitEulerIntegratorP1 {
+    const FEMProblem& P;
+    explicit HeatImplicitEulerIntegratorP1(const FEMProblem& prob) : P(prob) {}
+
+    void element(const FEMMesh& mesh, const FEMMesh::Elem& E,
+                 Real (&Ke)[3][3], Real (&be)[3]) const
+    {
+        for (int i = 0; i < 3; ++i) {
+            be[i] = 0;
+            for (int j = 0; j < 3; ++j) Ke[i][j] = 0;
+        }
+
+        const double dt = (P.dt > 0.0) ? P.dt : 0.0;
+        const bool has_prev = !P.u_prev.empty();
+
+        const auto& P0 = mesh.nodes[E.v[0]];
+        const auto& P1 = mesh.nodes[E.v[1]];
+        const auto& P2 = mesh.nodes[E.v[2]];
+
+        double grad[3][2];
+        detail::compute_p1_gradients(P0, P1, P2, grad);
+
+        for (int q = 0; q < fem::TriQuad3::n; ++q) {
+            double x, y;
+            fem::tri_point(mesh, E,
+                          fem::TriQuad3::l1[q],
+                          fem::TriQuad3::l2[q],
+                          fem::TriQuad3::l3[q],
+                          x, y);
+
+            const double aq = (double)P.a(x, y);
+            const double cq = (double)P.c(x, y);
+            const double fq = (double)P.f(x, y);
+            const double wq = fem::TriQuad3::w[q];
+
+            const double N[3] = {
+                fem::TriQuad3::l1[q],
+                fem::TriQuad3::l2[q],
+                fem::TriQuad3::l3[q]
+            };
+
+            // Stiffness + reaction into Ke
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    double grad_dot = grad[i][0]*grad[j][0] + grad[i][1]*grad[j][1];
+                    Ke[i][j] += (Real)(wq * aq * grad_dot * E.area);
+                    Ke[i][j] += (Real)(wq * cq * N[i] * N[j] * E.area);
+                }
+            }
+
+            // Time-derivative mass term (only if transient fields are set)
+            if (dt > 0.0) [[likely]] {
+                const double inv_dt = 1.0 / dt;
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 3; ++j) {
+                        const double m_ij = wq * N[i] * N[j] * E.area;
+                        Ke[i][j] += (Real)(inv_dt * m_ij);
+
+                        if (has_prev) [[likely]] {
+                            const int J = E.v[j];
+                            const double u_prev_j = P.u_prev[(size_t)J];
+                            be[i] += (Real)(inv_dt * m_ij * u_prev_j);
+                        }
+                    }
+                }
+            }
+
+            // Load term b(t^{n+1})
+            for (int i = 0; i < 3; ++i) {
+                be[i] += (Real)(wq * fq * N[i] * E.area);
+            }
+        }
+    }
+
+    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
+                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
+    {
+        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+
+        const auto& A = mesh.nodes[e.a];
+        const auto& B = mesh.nodes[e.b];
+        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
+
+        if (e.type == fem::BCType::Neumann) {
+            const Real gN = (Real)e.gN;
+            rhs[e.a] += gN * (L * (Real)0.5);
+            rhs[e.b] += gN * (L * (Real)0.5);
+            return;
+        }
+
+        if (e.type == fem::BCType::Robin) {
+            const Real k = (Real)e.k;
+            const Real g = (Real)e.g;
+
+            const Real m00 = L * (Real)(2.0/6.0);
+            const Real m01 = L * (Real)(1.0/6.0);
+            const Real m11 = L * (Real)(2.0/6.0);
+
+            T.push_back({e.a, e.a, (double)(k * m00)});
+            T.push_back({e.a, e.b, (double)(k * m01)});
+            T.push_back({e.b, e.a, (double)(k * m01)});
+            T.push_back({e.b, e.b, (double)(k * m11)});
+
+            rhs[e.a] += g * (L * (Real)0.5);
+            rhs[e.b] += g * (L * (Real)0.5);
+        }
+    }
+};
+
+template<typename Real>
+struct WaveNewmarkIntegratorP1 {
+    const FEMProblem& P;
+    explicit WaveNewmarkIntegratorP1(const FEMProblem& prob) : P(prob) {}
+
+    void element(const FEMMesh& mesh, const FEMMesh::Elem& E,
+                 Real (&Ke)[3][3], Real (&be)[3]) const
+    {
+        for (int i = 0; i < 3; ++i) {
+            be[i] = 0;
+            for (int j = 0; j < 3; ++j) Ke[i][j] = 0;
+        }
+
+        // Use compile-time validated parameters
+        static constexpr double beta = default_newmark.beta;
+        static constexpr double gamma = default_newmark.gamma;
+        
+        const double dt = (P.dt > 0.0) ? P.dt : 0.0;
+        const double inv_beta_dt2 = (dt > 0.0) ? (1.0 / (beta * dt * dt)) : 0.0;
+        const bool has_pred = !P.u_prev.empty();
+
+        const auto& P0 = mesh.nodes[E.v[0]];
+        const auto& P1 = mesh.nodes[E.v[1]];
+        const auto& P2 = mesh.nodes[E.v[2]];
+
+        double grad[3][2];
+        detail::compute_p1_gradients(P0, P1, P2, grad);
+
+        for (int q = 0; q < fem::TriQuad3::n; ++q) {
+            double x, y;
+            fem::tri_point(mesh, E,
+                           fem::TriQuad3::l1[q],
+                           fem::TriQuad3::l2[q],
+                           fem::TriQuad3::l3[q],
+                           x, y);
+
+            const double aq = (double)P.a(x, y);
+            const double cq = (double)P.c(x, y);
+            const double fq = (double)P.f(x, y);
+            const double wq = fem::TriQuad3::w[q];
+
+            const double N[3] = {
+                fem::TriQuad3::l1[q],
+                fem::TriQuad3::l2[q],
+                fem::TriQuad3::l3[q]
+            };
+
+            // Effective stiffness: K + cM + (1/(β dt^2)) M
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    const double grad_dot = grad[i][0]*grad[j][0] + grad[i][1]*grad[j][1];
+                    Ke[i][j] += (Real)(wq * aq * grad_dot * E.area);
+
+                    const double m_ij = wq * N[i] * N[j] * E.area;
+                    Ke[i][j] += (Real)(wq * cq * N[i] * N[j] * E.area);
+                    Ke[i][j] += (Real)(inv_beta_dt2 * m_ij);
+
+                    if (has_pred && inv_beta_dt2 != 0.0) [[likely]] {
+                        const int J = E.v[j];
+                        const double u_pred_j = P.u_prev[(size_t)J];
+                        be[i] += (Real)(inv_beta_dt2 * m_ij * u_pred_j);
+                    }
+                }
+            }
+
+            // Load term f(t^{n+1})
+            for (int i = 0; i < 3; ++i) {
+                be[i] += (Real)(wq * fq * N[i] * E.area);
+            }
+        }
+    }
+
+    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
+                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
+    {
+        // Same boundary handling as elliptic/heat assembly: Neumann/Robin contribute to RHS/matrix.
+        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+
+        const auto& A = mesh.nodes[e.a];
+        const auto& B = mesh.nodes[e.b];
+        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
+
+        if (e.type == fem::BCType::Neumann) {
+            const Real gN = (Real)e.gN;
+            rhs[e.a] += gN * (L * (Real)0.5);
+            rhs[e.b] += gN * (L * (Real)0.5);
+            return;
+        }
+
+        if (e.type == fem::BCType::Robin) {
+            const Real k = (Real)e.k;
+            const Real g = (Real)e.g;
+
+            const Real m00 = L * (Real)(2.0/6.0);
+            const Real m01 = L * (Real)(1.0/6.0);
+            const Real m11 = L * (Real)(2.0/6.0);
+
+            T.push_back({e.a, e.a, (double)(k * m00)});
+            T.push_back({e.a, e.b, (double)(k * m01)});
+            T.push_back({e.b, e.a, (double)(k * m01)});
+            T.push_back({e.b, e.b, (double)(k * m11)});
+
+            rhs[e.a] += g * (L * (Real)0.5);
+            rhs[e.b] += g * (L * (Real)0.5);
+        }
+    }
+};
+
+
+} // namespace fem
+
+#endif

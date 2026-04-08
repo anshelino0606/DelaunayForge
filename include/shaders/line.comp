@@ -1,0 +1,20 @@
+#version 430 core
+
+layout(local_size_x = 1) in;  // Number of work groups
+
+layout(std430, binding = 0) buffer PointsBuffer {
+    vec3 points[];
+};
+
+layout(std430, binding = 1) buffer LinesBuffer {
+    vec3 lines[];
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx < points.length() / 2) {
+        lines[2 * idx] = points[idx];
+        lines[2 * idx + 1] = points[idx + 1];
+    }
+}

@@ -1,0 +1,32 @@
+#ifndef FEM_PDE_RHS_KINDS_H
+#define FEM_PDE_RHS_KINDS_H
+
+#include "pde_rhs.h"
+
+namespace fem {
+
+FEM_DECLARE_RHS_SCALAR_PARAMETER_DEFAULT_VALUE(FConstant, 1);
+FEM_DECLARE_RHS_SCALAR_PARAMETER_DEFAULT_VALUE(A, 1);
+FEM_DECLARE_RHS_SCALAR_PARAMETER(KX);
+FEM_DECLARE_RHS_SCALAR_PARAMETER(KY);
+
+FEM_DECLARE_RHS(
+    RHS_FConstant,
+    FConstant
+);
+
+FEM_DECLARE_RHS(
+    RHS_Sin,
+    A,
+    KX,
+    KY
+);
+
+FEM_DECLARE_RHS(
+    RHS_PoissonManufactured,
+    A
+);
+
+}
+
+#endif // FEM_PDE_RHS_KINDS_H
