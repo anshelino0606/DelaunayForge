@@ -1,3 +1,15 @@
+build/
+build-*/
+build-xcode/
+out/
 
-# macOS
+CMakeFiles/
+
 .DS_Store
+.vscode/
+
+.cache
+compile_commands.json
+CMakeUserPresets.json
+
+
