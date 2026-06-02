@@ -111,6 +111,32 @@ inline std::string svg_rgb(const Rgba8& c) {
     return std::format("rgb({},{},{})", c.r, c.g, c.b);
 }
 
+struct ColorbarLayout {
+    float width = 0.0f;
+    float height = 0.0f;
+    float x_gap = 0.0f;
+    float y_offset = 0.0f;
+    float label_gap = 0.0f;
+    int right_margin = 0;
+    int svg_font_px = 0;
+    int bitmap_label_scale = 1;
+};
+
+inline ColorbarLayout make_colorbar_layout(float plot_h, int scale) {
+    const float scale_f = static_cast<float>(std::max(scale, 1));
+
+    ColorbarLayout layout;
+    layout.height = std::clamp(plot_h * 0.42f, 180.0f * scale_f, 320.0f * scale_f);
+    layout.width = std::clamp(plot_h * 0.055f, 24.0f * scale_f, 48.0f * scale_f);
+    layout.x_gap = std::max(18.0f * scale_f, layout.width * 0.8f);
+    layout.y_offset = std::max(10.0f * scale_f, layout.width * 0.25f);
+    layout.label_gap = std::max(10.0f * scale_f, layout.width * 0.45f);
+    layout.right_margin = (int)std::ceil(layout.x_gap + layout.width + std::max(110.0f * scale_f, layout.width * 2.8f));
+    layout.svg_font_px = (int)std::lround(std::max(14.0f * scale_f, layout.width * 0.6f));
+    layout.bitmap_label_scale = std::max(scale + 1, (int)std::lround(layout.width / 10.0f));
+    return layout;
+}
+
 } // namespace
 
 static void draw_boundary_polyline(ImDrawList* dl, const Viewport& vp,
@@ -352,7 +378,7 @@ void CanvasWindow::draw_solution(const CanvasWindowDrawInfo& draw_info) {
     if (global_u_min > global_u_max) return;
 
     ImVec2 cb_pos(state_.position.x + 10, state_.position.y + 10);
-    ImVec2 cb_size(20, 120); // width x height
+    ImVec2 cb_size(20, 120);
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     auto color_for_u = [global_u_min, global_u_max](double u)->ImU32 {
@@ -639,8 +665,11 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
     }
 
     const bool draw_colorbar = export_settings_.include_colorbar && have_bounds && export_settings_.include_solution;
+    const int estimated_plot_h = std::max(64, (int)std::lround(state_.size.y * (float)scale) - margin_t - margin_b);
+    ColorbarLayout colorbar_layout;
     if (draw_colorbar) {
-        margin_r = 120 * scale;
+        colorbar_layout = make_colorbar_layout((float)estimated_plot_h, scale);
+        margin_r = std::max(margin_r, colorbar_layout.right_margin);
     }
 
     const double world_w = std::max(1e-12, wx_max - wx_min);
@@ -668,6 +697,10 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
     
     const int plot_x0 = margin_l + (base_plot_w - plot_w) / 2;
     const int plot_y0 = margin_t + (base_plot_h - plot_h) / 2;
+
+    if (draw_colorbar) {
+        colorbar_layout = make_colorbar_layout((float)plot_h, scale);
+    }
 
     auto to_px = [&](double wx, double wy) -> ImVec2 {
         const double tx = (wx - wx_min) / world_w;
@@ -861,15 +894,15 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
     }
 
     if (draw_colorbar) {
-        const int cb_w = 18 * scale;
-        const int cb_h = std::min(plot_h, 140 * scale);
-        const int cb_x = plot_x0 + plot_w + 35 * scale;
-        const int cb_y = plot_y0 + 5 * scale;
+        const int cb_w = (int)std::lround(colorbar_layout.width);
+        const int cb_h = (int)std::lround(std::min<float>(plot_h, colorbar_layout.height));
+        const int cb_x = plot_x0 + plot_w + (int)std::lround(colorbar_layout.x_gap);
+        const int cb_y = plot_y0 + (int)std::lround(colorbar_layout.y_offset);
 
         ss << "  <rect x=\"" << cb_x << "\" y=\"" << cb_y << "\" width=\"" << cb_w << "\" height=\"" << cb_h
            << "\" fill=\"url(#cbGrad)\" stroke=\"" << svg_rgb(fg) << "\" stroke-width=\"" << (1 * scale) << "\"/>\n";
 
-        const int cb_font_px = 11 * scale;
+        const int cb_font_px = colorbar_layout.svg_font_px;
         auto draw_cb_text = [&](float x, float y, std::string_view text, const char* anchor) {
             ss << "  <text x=\"" << x << "\" y=\"" << y << "\" fill=\"" << svg_rgb(fg)
                << "\" font-size=\"" << cb_font_px << "\" font-family=\"Helvetica, Arial, sans-serif\""
@@ -877,8 +910,8 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
                << svg_escape(text) << "</text>\n";
         };
 
-        draw_cb_text((float)(cb_x + cb_w + 6 * scale), (float)(cb_y + 2), fmt_tick(u_max), "start");
-        draw_cb_text((float)(cb_x + cb_w + 6 * scale), (float)(cb_y + cb_h), fmt_tick(u_min), "start");
+        draw_cb_text((float)(cb_x + cb_w + colorbar_layout.label_gap), (float)(cb_y + cb_font_px * 0.5f), fmt_tick(u_max), "start");
+        draw_cb_text((float)(cb_x + cb_w + colorbar_layout.label_gap), (float)(cb_y + cb_h - cb_font_px * 0.5f), fmt_tick(u_min), "start");
     }
 
     if (export_settings_.include_bc_legend && export_settings_.include_boundary_conditions && last_mesh_) {
@@ -1099,8 +1132,11 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
     }
 
     const bool draw_colorbar = export_settings_.include_colorbar && have_bounds && export_settings_.include_solution;
+    const int estimated_plot_h = std::max(64, (int)std::lround(state_.size.y * (float)scale) - margin_t - margin_b);
+    ColorbarLayout colorbar_layout;
     if (draw_colorbar) {
-        margin_r = 120 * scale;
+        colorbar_layout = make_colorbar_layout((float)estimated_plot_h, scale);
+        margin_r = std::max(margin_r, colorbar_layout.right_margin);
     }
 
     const double world_w = std::max(1e-12, wx_max - wx_min);
@@ -1127,6 +1163,10 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
     
     const int plot_x0 = margin_l + (base_plot_w - plot_w) / 2;
     const int plot_y0 = margin_t + (base_plot_h - plot_h) / 2;
+
+    if (draw_colorbar) {
+        colorbar_layout = make_colorbar_layout((float)plot_h, scale);
+    }
 
     auto to_px = [&](double wx, double wy) -> ImVec2 {
         const double tx = (wx - wx_min) / world_w;
@@ -1441,10 +1481,10 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
     }
 
     if (draw_colorbar) {
-        const int cb_w = 18 * scale;
-        const int cb_h = std::min(plot_h, 140 * scale);
-        const int cb_x = plot_x0 + plot_w + 35 * scale;
-        const int cb_y = plot_y0 + 5 * scale;
+        const int cb_w = (int)std::lround(colorbar_layout.width);
+        const int cb_h = (int)std::lround(std::min<float>(plot_h, colorbar_layout.height));
+        const int cb_x = plot_x0 + plot_w + (int)std::lround(colorbar_layout.x_gap);
+        const int cb_y = plot_y0 + (int)std::lround(colorbar_layout.y_offset);
 
         for (int y = 0; y < cb_h; ++y) {
             double t = 1.0 - (double)y / (double)(cb_h - 1);
@@ -1460,9 +1500,28 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
         draw_line(cb_x + cb_w, cb_y + cb_h, cb_x, cb_y + cb_h, fg, scale);
         draw_line(cb_x, cb_y + cb_h, cb_x, cb_y, fg, scale);
 
-        const int label_scale = std::max(1, scale);
-        draw_text_5x7(cb_x + cb_w + 6 * scale, cb_y - 4 * scale, fmt_tick(u_max), fg, label_scale, 0);
-        draw_text_5x7(cb_x + cb_w + 6 * scale, cb_y + cb_h - 4 * scale, fmt_tick(u_min), fg, label_scale, 0);
+        const int label_scale = colorbar_layout.bitmap_label_scale;
+        const std::string u_max_label = fmt_tick(u_max);
+        const std::string u_min_label = fmt_tick(u_min);
+        const ImVec2 u_max_label_size = measure_text_5x7(u_max_label, label_scale);
+        const ImVec2 u_min_label_size = measure_text_5x7(u_min_label, label_scale);
+        draw_text_5x7(
+            cb_x + cb_w + (int)std::lround(colorbar_layout.label_gap),
+            cb_y,
+            u_max_label,
+            fg,
+            label_scale,
+            0
+        );
+        draw_text_5x7(
+            cb_x + cb_w + (int)std::lround(colorbar_layout.label_gap),
+            cb_y + cb_h - (int)std::lround(u_min_label_size.y),
+            u_min_label,
+            fg,
+            label_scale,
+            0
+        );
+        (void)u_max_label_size;
     }
 
     if (export_settings_.include_bc_legend && export_settings_.include_boundary_conditions && last_mesh_) {
