@@ -137,6 +137,81 @@ inline ColorbarLayout make_colorbar_layout(float plot_h, int scale) {
     return layout;
 }
 
+inline bool glyph_5x7(char c, uint8_t rows[7]) {
+    auto set = [&](uint8_t r0, uint8_t r1, uint8_t r2, uint8_t r3, uint8_t r4, uint8_t r5, uint8_t r6) {
+        rows[0] = r0; rows[1] = r1; rows[2] = r2; rows[3] = r3; rows[4] = r4; rows[5] = r5; rows[6] = r6;
+    };
+    switch (c) {
+    case '0': set(0x0E,0x11,0x13,0x15,0x19,0x11,0x0E); return true;
+    case '1': set(0x04,0x0C,0x04,0x04,0x04,0x04,0x0E); return true;
+    case '2': set(0x0E,0x11,0x01,0x02,0x04,0x08,0x1F); return true;
+    case '3': set(0x0E,0x11,0x01,0x06,0x01,0x11,0x0E); return true;
+    case '4': set(0x02,0x06,0x0A,0x12,0x1F,0x02,0x02); return true;
+    case '5': set(0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E); return true;
+    case '6': set(0x06,0x08,0x10,0x1E,0x11,0x11,0x0E); return true;
+    case '7': set(0x1F,0x01,0x02,0x04,0x08,0x08,0x08); return true;
+    case '8': set(0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E); return true;
+    case '9': set(0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C); return true;
+    case '.': set(0x00,0x00,0x00,0x00,0x00,0x06,0x06); return true;
+    case '-': set(0x00,0x00,0x00,0x1F,0x00,0x00,0x00); return true;
+    case 'e':
+    case 'E': set(0x00,0x0E,0x11,0x1F,0x10,0x11,0x0E); return true;
+    default:
+        return false;
+    }
+}
+
+inline ImVec2 measure_text_5x7(std::string_view text, int px_scale) {
+    const int cw = 5 * px_scale;
+    const int ch = 7 * px_scale;
+    const int sp = 1 * px_scale;
+    int w = 0;
+    for (char c : text) {
+        w += cw;
+        w += sp;
+        (void)c;
+    }
+    if (!text.empty()) w -= sp;
+    return ImVec2((float)w, (float)ch);
+}
+
+inline void svg_draw_text_5x7(std::ostringstream& ss,
+                              float x,
+                              float y,
+                              std::string_view text,
+                              const Rgba8& color,
+                              int px_scale,
+                              int anchor) {
+    ImVec2 sz = measure_text_5x7(text, px_scale);
+    float xx = x;
+    if (anchor == 1) xx -= sz.x * 0.5f;
+    if (anchor == 2) xx -= sz.x;
+
+    const int cw = 5 * px_scale;
+    const int sp = 1 * px_scale;
+
+    float pen_x = xx;
+    uint8_t rows[7];
+    for (char c : text) {
+        if (!glyph_5x7(c, rows)) {
+            pen_x += (float)(cw + sp);
+            continue;
+        }
+        for (int ry = 0; ry < 7; ++ry) {
+            for (int rx = 0; rx < 5; ++rx) {
+                if (rows[ry] & (1u << (4 - rx))) {
+                    ss << "  <rect x=\"" << (pen_x + (float)(rx * px_scale))
+                       << "\" y=\"" << (y + (float)(ry * px_scale))
+                       << "\" width=\"" << px_scale
+                       << "\" height=\"" << px_scale
+                       << "\" fill=\"" << svg_rgb(color) << "\"/>\n";
+                }
+            }
+        }
+        pen_x += (float)(cw + sp);
+    }
+}
+
 } // namespace
 
 static void draw_boundary_polyline(ImDrawList* dl, const Viewport& vp,
@@ -752,12 +827,15 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
     ss << "    <clipPath id=\"plotClip\"><rect x=\"" << plot_x0 << "\" y=\"" << plot_y0
        << "\" width=\"" << plot_w << "\" height=\"" << plot_h << "\"/></clipPath>\n";
     if (draw_colorbar) {
-        // simple 2-stop gradient matching the colormap endpoints
-        auto c0 = color_for_u(u_min);
-        auto c1 = color_for_u(u_max);
         ss << "    <linearGradient id=\"cbGrad\" x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\">\n";
-        ss << "      <stop offset=\"0%\" stop-color=\"" << svg_rgb(c0) << "\"/>\n";
-        ss << "      <stop offset=\"100%\" stop-color=\"" << svg_rgb(c1) << "\"/>\n";
+        constexpr int kColorbarStops = 16;
+        for (int i = 0; i <= kColorbarStops; ++i) {
+            const double t = static_cast<double>(i) / static_cast<double>(kColorbarStops);
+            const double u = u_min + t * (u_max - u_min);
+            const Rgba8 c = color_for_u(u);
+            ss << "      <stop offset=\"" << (t * 100.0) << "%\" stop-color=\"" << svg_rgb(c)
+               << "\" stop-opacity=\"" << (static_cast<double>(c.a) / 255.0) << "\"/>\n";
+        }
         ss << "    </linearGradient>\n";
     }
     ss << "  </defs>\n";
@@ -859,14 +937,7 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
 
     if (export_settings_.include_axes) {
         const int tick_len = 6 * scale;
-        const int font_px = 12 * scale;
-
-        auto draw_text = [&](float x, float y, std::string_view text, const char* anchor) {
-            ss << "  <text x=\"" << x << "\" y=\"" << y << "\" fill=\"" << svg_rgb(fg)
-               << "\" font-size=\"" << font_px << "\" font-family=\"Helvetica, Arial, sans-serif\""
-               << " text-anchor=\"" << anchor << "\" dominant-baseline=\"middle\">"
-               << svg_escape(text) << "</text>\n";
-        };
+        const int label_scale = std::max(1, scale);
 
         // X-axis ticks (rounded via nice_ticks)
         const auto x_ticks = nice_ticks(wx_min, wx_max, 6);
@@ -877,7 +948,7 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
             float y1 = y0 + tick_len;
             ss << "  <line x1=\"" << x << "\" y1=\"" << y0 << "\" x2=\"" << x << "\" y2=\"" << y1
                << "\" stroke=\"" << svg_rgb(fg) << "\" stroke-width=\"" << (1 * scale) << "\"/>\n";
-            draw_text(x, y1 + (float)(10 * scale), fmt_tick(wx), "middle");
+                svg_draw_text_5x7(ss, x, y1 + (float)(4 * scale), fmt_tick(wx), fg, label_scale, 1);
         }
 
         // Y-axis ticks (rounded via nice_ticks)
@@ -889,7 +960,7 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
             float x1 = x0 - tick_len;
             ss << "  <line x1=\"" << x0 << "\" y1=\"" << y << "\" x2=\"" << x1 << "\" y2=\"" << y
                << "\" stroke=\"" << svg_rgb(fg) << "\" stroke-width=\"" << (1 * scale) << "\"/>\n";
-            draw_text(x1 - (float)(6 * scale), y, fmt_tick(wy), "end");
+            svg_draw_text_5x7(ss, x1 - (float)(4 * scale), y - (float)std::lround(3.5f * label_scale), fmt_tick(wy), fg, label_scale, 2);
         }
     }
 
@@ -902,16 +973,24 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
         ss << "  <rect x=\"" << cb_x << "\" y=\"" << cb_y << "\" width=\"" << cb_w << "\" height=\"" << cb_h
            << "\" fill=\"url(#cbGrad)\" stroke=\"" << svg_rgb(fg) << "\" stroke-width=\"" << (1 * scale) << "\"/>\n";
 
-        const int cb_font_px = colorbar_layout.svg_font_px;
-        auto draw_cb_text = [&](float x, float y, std::string_view text, const char* anchor) {
-            ss << "  <text x=\"" << x << "\" y=\"" << y << "\" fill=\"" << svg_rgb(fg)
-               << "\" font-size=\"" << cb_font_px << "\" font-family=\"Helvetica, Arial, sans-serif\""
-               << " text-anchor=\"" << anchor << "\" dominant-baseline=\"middle\">"
-               << svg_escape(text) << "</text>\n";
-        };
-
-        draw_cb_text((float)(cb_x + cb_w + colorbar_layout.label_gap), (float)(cb_y + cb_font_px * 0.5f), fmt_tick(u_max), "start");
-        draw_cb_text((float)(cb_x + cb_w + colorbar_layout.label_gap), (float)(cb_y + cb_h - cb_font_px * 0.5f), fmt_tick(u_min), "start");
+        const int label_scale = colorbar_layout.bitmap_label_scale;
+        const std::string u_max_label = fmt_tick(u_max);
+        const std::string u_min_label = fmt_tick(u_min);
+        const ImVec2 u_min_label_size = measure_text_5x7(u_min_label, label_scale);
+        svg_draw_text_5x7(ss,
+                          (float)(cb_x + cb_w + colorbar_layout.label_gap),
+                          (float)cb_y,
+                          u_max_label,
+                          fg,
+                          label_scale,
+                          0);
+        svg_draw_text_5x7(ss,
+                          (float)(cb_x + cb_w + colorbar_layout.label_gap),
+                          (float)(cb_y + cb_h - std::lround(u_min_label_size.y)),
+                          u_min_label,
+                          fg,
+                          label_scale,
+                          0);
     }
 
     if (export_settings_.include_bc_legend && export_settings_.include_boundary_conditions && last_mesh_) {
@@ -954,11 +1033,10 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
             ss << "  <line x1=\"" << x1 << "\" y1=\"" << y << "\" x2=\"" << x2 << "\" y2=\"" << y
                << "\" stroke=\"" << svg_rgb(color) << "\" stroke-width=\"" << (2.5f * scale)
                << "\" stroke-linecap=\"round\"/>\n";
-            
-            ss << "  <text x=\"" << (x2 + 6 * scale) << "\" y=\"" << y
-               << "\" fill=\"" << svg_rgb(fg) << "\" font-size=\"" << font_px
-               << "\" font-family=\"Helvetica, Arial, sans-serif\" text-anchor=\"start\""
-               << " dominant-baseline=\"middle\">" << svg_escape(bc_name(bc_type.value)) << "</text>\n";
+                ss << "  <text x=\"" << (x2 + 6 * scale) << "\" y=\"" << y
+                    << "\" fill=\"" << svg_rgb(fg) << "\" font-size=\"" << font_px
+                    << "\" font-family=\"Helvetica, Arial, sans-serif\" text-anchor=\"start\""
+                    << " dominant-baseline=\"middle\">" << svg_escape(bc_name(bc_type.value)) << "</text>\n";
             
             y_offset += line_h;
         }
@@ -1377,44 +1455,6 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
         draw_line(plot_x0 + plot_w, plot_y0 + plot_h, plot_x0, plot_y0 + plot_h, fg, frame_w);
         draw_line(plot_x0, plot_y0 + plot_h, plot_x0, plot_y0, fg, frame_w);
     }
-
-    auto glyph_5x7 = [](char c, uint8_t rows[7]) -> bool {
-        auto set = [&](uint8_t r0, uint8_t r1, uint8_t r2, uint8_t r3, uint8_t r4, uint8_t r5, uint8_t r6) {
-            rows[0] = r0; rows[1] = r1; rows[2] = r2; rows[3] = r3; rows[4] = r4; rows[5] = r5; rows[6] = r6;
-        };
-        switch (c) {
-        case '0': set(0x0E,0x11,0x13,0x15,0x19,0x11,0x0E); return true;
-        case '1': set(0x04,0x0C,0x04,0x04,0x04,0x04,0x0E); return true;
-        case '2': set(0x0E,0x11,0x01,0x02,0x04,0x08,0x1F); return true;
-        case '3': set(0x0E,0x11,0x01,0x06,0x01,0x11,0x0E); return true;
-        case '4': set(0x02,0x06,0x0A,0x12,0x1F,0x02,0x02); return true;
-        case '5': set(0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E); return true;
-        case '6': set(0x06,0x08,0x10,0x1E,0x11,0x11,0x0E); return true;
-        case '7': set(0x1F,0x01,0x02,0x04,0x08,0x08,0x08); return true;
-        case '8': set(0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E); return true;
-        case '9': set(0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C); return true;
-        case '.': set(0x00,0x00,0x00,0x00,0x00,0x06,0x06); return true;
-        case '-': set(0x00,0x00,0x00,0x1F,0x00,0x00,0x00); return true;
-        case 'e':
-        case 'E': set(0x00,0x0E,0x11,0x1F,0x10,0x11,0x0E); return true;
-        default:
-            return false;
-        }
-    };
-
-    auto measure_text_5x7 = [&](std::string_view text, int px_scale) -> ImVec2 {
-        const int cw = 5 * px_scale;
-        const int ch = 7 * px_scale;
-        const int sp = 1 * px_scale;
-        int w = 0;
-        for (char c : text) {
-            w += cw;
-            w += sp;
-            (void)c;
-        }
-        if (!text.empty()) w -= sp;
-        return ImVec2((float)w, (float)ch);
-    };
 
     auto draw_text_5x7 = [&](int x, int y, std::string_view text, uint32_t color, int px_scale, int anchor /*0=left,1=mid,2=right*/) {
         ImVec2 sz = measure_text_5x7(text, px_scale);
