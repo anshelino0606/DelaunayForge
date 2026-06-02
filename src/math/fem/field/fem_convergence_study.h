@@ -36,6 +36,9 @@ struct ConvergenceDataPoint {
     double h1_semi = 0.0;
     double h1_full = 0.0;
     double energy = 0.0;
+    double rel_l2 = 0.0;
+    double rel_h1_semi = 0.0;
+    double rel_h1_full = 0.0;
     
 
     double rate_linf = 0.0;
@@ -45,6 +48,7 @@ struct ConvergenceDataPoint {
     
     bool has_h1 = false;
     bool has_energy = false;
+    bool has_relative = false;
     
 
     double point_value = 0.0;
@@ -68,6 +72,8 @@ struct ConvergenceStudyConfig {
     int min_level = 0;
     int max_level = 4;
     int ref_level = 6;
+    ReferenceRefinementStrategy reference_refinement_strategy =
+        ReferenceRefinementStrategy::UniformTriangulationSubdivision;
     
 
     bool use_exact_solution = true;
@@ -97,8 +103,10 @@ struct ConvergenceStudyResults {
     std::vector<AitkenData> aitken_point;
     
 
+    double avg_rate_linf = 0.0;
     double avg_rate_l2 = 0.0;
     double avg_rate_h1 = 0.0;
+    double avg_rate_energy = 0.0;
     
     bool valid = false;
     std::string error_message;

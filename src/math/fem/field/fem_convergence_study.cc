@@ -7,12 +7,19 @@
 
 namespace fem {
 
+static std::string latex_sci_or_dash(double value, bool valid) {
+    if (!valid) return "---";
+    std::ostringstream ss;
+    ss << std::scientific << std::setprecision(2) << value;
+    return ss.str();
+}
+
 std::string ConvergenceStudyResults::to_csv() const {
     std::ostringstream ss;
     ss.setf(std::ios::scientific);
     ss.precision(16);
     
-    ss << "level,h,dofs,linf,l2,h1_semi,h1_full,energy,rate_l2,rate_h1\n";
+    ss << "level,h,dofs,linf,l2,rel_l2,h1_semi,h1_full,rel_h1_semi,rel_h1_full,energy,rate_linf,rate_l2,rate_h1,rate_energy\n";
     
     for (const auto& pt : data) {
         ss << pt.level << ","
@@ -20,11 +27,16 @@ std::string ConvergenceStudyResults::to_csv() const {
            << pt.dofs << ","
            << pt.linf << ","
            << pt.l2 << ","
+           << pt.rel_l2 << ","
            << pt.h1_semi << ","
            << pt.h1_full << ","
+           << pt.rel_h1_semi << ","
+           << pt.rel_h1_full << ","
            << pt.energy << ","
+           << pt.rate_linf << ","
            << pt.rate_l2 << ","
-           << pt.rate_h1 << "\n";
+           << pt.rate_h1 << ","
+           << pt.rate_energy << "\n";
     }
     
     return ss.str();
@@ -36,9 +48,9 @@ std::string ConvergenceStudyResults::to_latex_table() const {
     ss << "% LaTeX table for FEM convergence study\n";
     ss << "\\begin{table}[htbp]\n";
     ss << "\\centering\n";
-    ss << "\\begin{tabular}{ccccccc}\n";
+    ss << "\\begin{tabular}{ccccccccc}\n";
     ss << "\\toprule\n";
-    ss << "Level & $h$ & DOFs & $\\|e\\|_{L^\\infty}$ & $\\|e\\|_{L^2}$ & $|e|_{H^1}$ & Rate \\\\\n";
+    ss << "Level & $h$ & DOFs & $\\|e\\|_{L^\\infty}$ & $\\|e\\|_{L^2}$ & $\\|e\\|_{L^2}/\\|u\\|_{L^2}$ & $\\|e\\|_{W^{1,2}}$ & $\\|e\\|_{W^{1,2}}/\\|u\\|_{W^{1,2}}$ & Rate \\\\n";
     ss << "\\midrule\n";
     
     for (const auto& pt : data) {
@@ -47,10 +59,12 @@ std::string ConvergenceStudyResults::to_latex_table() const {
            << pt.dofs << " & "
            << std::scientific << std::setprecision(2) << pt.linf << " & "
            << std::scientific << std::setprecision(2) << pt.l2 << " & "
-           << std::scientific << std::setprecision(2) << pt.h1_semi;
+           << latex_sci_or_dash(pt.rel_l2, pt.has_relative) << " & "
+           << std::scientific << std::setprecision(2) << pt.h1_full << " & "
+           << latex_sci_or_dash(pt.rel_h1_full, pt.has_relative);
         
-        if (pt.rate_l2 > 0.0) {
-            ss << " & " << std::fixed << std::setprecision(2) << pt.rate_l2;
+        if (pt.rate_h1 > 0.0) {
+            ss << " & " << std::fixed << std::setprecision(2) << pt.rate_h1;
         } else {
             ss << " & ---";
         }
@@ -98,7 +112,7 @@ std::string ConvergenceStudyResults::to_python_plot() const {
     ss << "h1 = np.array([";
     for (size_t i = 0; i < data.size(); ++i) {
         if (i > 0) ss << ", ";
-        ss << std::scientific << std::setprecision(6) << data[i].h1_semi;
+        ss << std::scientific << std::setprecision(6) << data[i].h1_full;
     }
     ss << "])\n\n";
     
@@ -106,7 +120,7 @@ std::string ConvergenceStudyResults::to_python_plot() const {
     ss << "plt.figure(figsize=(10, 6))\n";
     ss << "plt.loglog(h, linf, 'o-', label='$L^\\infty$')\n";
     ss << "plt.loglog(h, l2, 's-', label='$L^2$')\n";
-    ss << "plt.loglog(h, h1, '^-', label='$H^1$ semi')\n";
+    ss << "plt.loglog(h, h1, '^-', label='$W^{1,2}$')\n";
     
     if (avg_rate_l2 > 0.0) {
         ss << "\n# Reference lines\n";
@@ -150,6 +164,7 @@ ConvergenceStudyResults ConvergenceStudyEngine::run_study(
     if (!use_exact) {
         ReferenceSolveRequest req;
         req.refinement_level = config.ref_level;
+        req.refinement_strategy = config.reference_refinement_strategy;
         ReferenceSolution ref_out;
         
         if (!provider->solve_reference(req, ref_out) || !ref_out.sol.is_ready()) {
@@ -171,6 +186,7 @@ ConvergenceStudyResults ConvergenceStudyEngine::run_study(
     for (int lvl = config.min_level; lvl <= config.max_level; ++lvl) {
         ReferenceSolveRequest req;
         req.refinement_level = lvl;
+        req.refinement_strategy = config.reference_refinement_strategy;
         ReferenceSolution sol_out;
         
         if (!provider->solve_reference(req, sol_out) || !sol_out.sol.is_ready()) {
@@ -217,20 +233,43 @@ ConvergenceStudyResults ConvergenceStudyEngine::run_study(
         
         // Average rates (skip first entry which has no rate)
         if (results.data.size() > 1) {
-            double sum_l2 = 0.0, sum_h1 = 0.0;
-            int count = 0;
+            double sum_linf = 0.0;
+            double sum_l2 = 0.0;
+            double sum_h1 = 0.0;
+            double sum_energy = 0.0;
+            int count_linf = 0;
+            int count_l2 = 0;
+            int count_h1 = 0;
+            int count_energy = 0;
             for (size_t i = 1; i < results.data.size(); ++i) {
+                if (results.data[i].rate_linf > 0.0) {
+                    sum_linf += results.data[i].rate_linf;
+                    count_linf++;
+                }
                 if (results.data[i].rate_l2 > 0.0) {
                     sum_l2 += results.data[i].rate_l2;
-                    count++;
+                    count_l2++;
                 }
                 if (results.data[i].rate_h1 > 0.0) {
                     sum_h1 += results.data[i].rate_h1;
+                    count_h1++;
+                }
+                if (results.data[i].rate_energy > 0.0) {
+                    sum_energy += results.data[i].rate_energy;
+                    count_energy++;
                 }
             }
-            if (count > 0) {
-                results.avg_rate_l2 = sum_l2 / count;
-                results.avg_rate_h1 = sum_h1 / count;
+            if (count_linf > 0) {
+                results.avg_rate_linf = sum_linf / count_linf;
+            }
+            if (count_l2 > 0) {
+                results.avg_rate_l2 = sum_l2 / count_l2;
+            }
+            if (count_h1 > 0) {
+                results.avg_rate_h1 = sum_h1 / count_h1;
+            }
+            if (count_energy > 0) {
+                results.avg_rate_energy = sum_energy / count_energy;
             }
         }
     }
@@ -279,10 +318,14 @@ ConvergenceDataPoint ConvergenceStudyEngine::compute_level_error(
     pt.linf = err.linf_nodes;
     pt.l2 = err.l2;
     pt.h1_semi = err.h1_semi;
-    pt.h1_full = std::sqrt(pt.l2 * pt.l2 + pt.h1_semi * pt.h1_semi);
+    pt.h1_full = err.h1_full;
     pt.energy = err.energy_A;
+    pt.rel_l2 = err.l2_rel;
+    pt.rel_h1_semi = err.h1_semi_rel;
+    pt.rel_h1_full = err.h1_full_rel;
     pt.has_h1 = err.has_grad;
     pt.has_energy = err.has_energy;
+    pt.has_relative = err.has_relative;
     
     return pt;
 }
@@ -337,9 +380,9 @@ void ConvergenceStudyEngine::compute_convergence_rates(
                 curr.rate_l2 = std::log(prev.l2 / curr.l2) / log_h;
             }
             
-            // H1 rate
-            if (prev.h1_semi > 1e-16 && curr.h1_semi > 1e-16) {
-                curr.rate_h1 = std::log(prev.h1_semi / curr.h1_semi) / log_h;
+            // W1,2 / full H1 rate
+            if (prev.h1_full > 1e-16 && curr.h1_full > 1e-16) {
+                curr.rate_h1 = std::log(prev.h1_full / curr.h1_full) / log_h;
             }
             
             // Energy rate
@@ -377,6 +420,11 @@ AitkenData ConvergenceStudyEngine::compute_aitken_extrapolation(
             result.q1 = p1.h1_semi;
             result.q2 = p2.h1_semi;
             result.q3 = p3.h1_semi;
+            break;
+        case ErrorNorm::H1Full:
+            result.q1 = p1.h1_full;
+            result.q2 = p2.h1_full;
+            result.q3 = p3.h1_full;
             break;
         case ErrorNorm::Energy:
             result.q1 = p1.energy;

@@ -16,12 +16,21 @@ class PDEComponent;
 
 DelaunayTriangulationResult refine_delaunay_uniform(
         const DelaunayTriangulationResult& input);
+
+enum class ReferenceRefinementStrategy {
+    UniformFemSubdivision,
+    UniformTriangulationSubdivision,
+};
     
 struct ReferenceSolveRequest {
     int refinement_level = 1;
+    ReferenceRefinementStrategy refinement_strategy =
+        ReferenceRefinementStrategy::UniformFemSubdivision;
 };
 
 struct ReferenceSolution {
+    DelaunayTriangulationResult triangulation;
+    bool has_triangulation = false;
     FEMMesh mesh;
     DifferentialEquationSolution sol;
     FEMSystem sys;

@@ -270,10 +270,22 @@ struct ErrorMetricsT {
     // Global norms (if exact provided)
     bool has_exact = false;
     bool has_grad  = false;
+    bool has_relative = false;
 
     Real linf_nodes = Real(0);
     Real l2 = Real(0);
     Real h1_semi = Real(0);
+    Real h1_full = Real(0);
+
+    Real linf_nodes_exact = Real(0);
+    Real l2_exact = Real(0);
+    Real h1_semi_exact = Real(0);
+    Real h1_full_exact = Real(0);
+
+    Real linf_nodes_rel = Real(0);
+    Real l2_rel = Real(0);
+    Real h1_semi_rel = Real(0);
+    Real h1_full_rel = Real(0);
 
     bool has_energy = false;
     Real energy_A = Real(0);
@@ -337,16 +349,21 @@ static inline ErrorMetricsT<Real> compute_error_metrics(
     if (has_exact) {
         // L_infty nodal
         Real linf = Real(0);
+        Real linf_exact = Real(0);
         for (int i = 0; i < M.dof_count(); ++i) {
             const auto& n = M.nodes[(size_t)i];
             const Real uex = exact->u_exact((Real)n.x, (Real)n.y);
             linf = std::max(linf, (Real)std::abs(uex - uh[(size_t)i]));
+            linf_exact = std::max(linf_exact, (Real)std::abs(uex));
         }
         out.linf_nodes = linf;
+        out.linf_nodes_exact = linf_exact;
 
         // L2 and H1
         Real l2_sq = Real(0);
         Real h1_sq = Real(0);
+        Real l2_exact_sq = Real(0);
+        Real h1_exact_sq = Real(0);
 
         for (const auto& E : M.elems) {
             const auto& P0 = M.nodes[(size_t)E.v[0]];
@@ -380,7 +397,9 @@ static inline ErrorMetricsT<Real> compute_error_metrics(
                 const Real ueq = exact->u_exact(xq, yq);
 
                 const Real diff = ueq - uhq;
-                l2_sq += (Real)(E.area * TriQuad3::w[q]) * diff * diff;
+                const Real wq = (Real)(E.area * TriQuad3::w[q]);
+                l2_sq += wq * diff * diff;
+                l2_exact_sq += wq * ueq * ueq;
 
                 if (has_grad) {
                     Real uex_x = Real(0), uex_y = Real(0);
@@ -390,13 +409,27 @@ static inline ErrorMetricsT<Real> compute_error_metrics(
                     const Real dy = uex_y - guy;
 
                     const Real aq = a_coeff ? (*a_coeff)(xq, yq) : Real(1);
-                    h1_sq += (Real)(E.area * TriQuad3::w[q]) * aq * (dx*dx + dy*dy);
+                    h1_sq += wq * aq * (dx*dx + dy*dy);
+                    h1_exact_sq += wq * aq * (uex_x*uex_x + uex_y*uex_y);
                 }
             }
         }
 
         out.l2 = std::sqrt(l2_sq);
-        if (has_grad) out.h1_semi = std::sqrt(h1_sq);
+        out.l2_exact = std::sqrt(l2_exact_sq);
+        if (has_grad) {
+            out.h1_semi = std::sqrt(h1_sq);
+            out.h1_semi_exact = std::sqrt(h1_exact_sq);
+        }
+        out.h1_full = std::sqrt(out.l2 * out.l2 + out.h1_semi * out.h1_semi);
+        out.h1_full_exact = std::sqrt(out.l2_exact * out.l2_exact + out.h1_semi_exact * out.h1_semi_exact);
+
+        const Real rel_eps = Real(1e-30);
+        out.linf_nodes_rel = (out.linf_nodes_exact > rel_eps) ? (out.linf_nodes / out.linf_nodes_exact) : Real(0);
+        out.l2_rel = (out.l2_exact > rel_eps) ? (out.l2 / out.l2_exact) : Real(0);
+        out.h1_semi_rel = (out.h1_semi_exact > rel_eps) ? (out.h1_semi / out.h1_semi_exact) : Real(0);
+        out.h1_full_rel = (out.h1_full_exact > rel_eps) ? (out.h1_full / out.h1_full_exact) : Real(0);
+        out.has_relative = (out.linf_nodes_exact > rel_eps) || (out.l2_exact > rel_eps) || (out.h1_full_exact > rel_eps);
 
         // Discrete energy norm sqrt(e^T A e) with nodal exact error vector.
         if (A_for_energy) {
@@ -664,6 +697,12 @@ static inline AitkenEstimateT<Real> aitken_estimate_3(
         return out;
     }
 
+    const Real ratio_scale = std::max({Real(1), out.ratio_12, out.ratio_23});
+    if (std::abs(out.ratio_12 - out.ratio_23) > Real(1e-6) * ratio_scale) {
+        out.valid = false;
+        return out;
+    }
+
     const Real d1 = q2 - q1;
     const Real d2 = q3 - q2;
     
@@ -671,6 +710,17 @@ static inline AitkenEstimateT<Real> aitken_estimate_3(
     const Real tol_q = scale * Real(1e-13);
 
     if (std::abs(d1) <= tol_q || std::abs(d2) <= tol_q) {
+        out.q_inf = q3;
+        out.err_fine = std::abs(d2);
+        out.p = Real(-1);
+        out.valid = false;
+        return out;
+    }
+
+    // For a single leading term q(h) = q_inf + C h^p, consecutive differences
+    // must have the same sign. If they flip sign, the asymptotic model is not
+    // supported by the three samples and the estimate should be rejected.
+    if (d1 * d2 <= Real(0)) {
         out.q_inf = q3;
         out.err_fine = std::abs(d2);
         out.p = Real(-1);

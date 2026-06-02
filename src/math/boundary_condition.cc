@@ -7,9 +7,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <queue>
+#include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace fem {
@@ -234,6 +237,113 @@ static bool compute_chain_endpoints(const DelaunayTriangulationResult& R,
     return true;
 }
 
+static bool same_edge_set(const std::vector<int>& lhs, const std::vector<int>& rhs) {
+    if (lhs.size() != rhs.size()) return false;
+    std::multiset<int> left(lhs.begin(), lhs.end());
+    std::multiset<int> right(rhs.begin(), rhs.end());
+    return left == right;
+}
+
+static bool compute_loop_diagnostics(const std::vector<Point2D>& loop,
+                                     double& out_total_len,
+                                     double& out_diag);
+
+static std::vector<std::vector<Point2D>> extract_boundary_point_loops(
+    const DelaunayTriangulationResult& R) {
+    std::vector<std::vector<Point2D>> loops;
+    std::unordered_set<int> visited_edges;
+    visited_edges.reserve(R.edges.size());
+
+    for (int eid = 0; eid < (int)R.edges.size(); ++eid) {
+        if (visited_edges.count(eid) > 0) continue;
+
+        const auto& edge = R.edges[eid];
+        if (!edge.on_boundary) continue;
+
+        std::vector<int> loop_vs;
+        std::vector<int> loop_eids;
+        if (!BoundaryCondition::extract_boundary_loop(R, edge.a, loop_vs, loop_eids)) continue;
+
+        bool has_new_edge = false;
+        for (int loop_eid : loop_eids) {
+            if (visited_edges.count(loop_eid) == 0) {
+                has_new_edge = true;
+                break;
+            }
+        }
+        if (!has_new_edge) continue;
+
+        std::vector<Point2D> loop_points;
+        loop_points.reserve(loop_vs.size());
+        for (int vid : loop_vs) {
+            if ((unsigned)vid >= (unsigned)R.points.size()) {
+                loop_points.clear();
+                break;
+            }
+            loop_points.push_back(R.points[vid]);
+        }
+
+        if (loop_points.size() >= 2) {
+            loops.push_back(std::move(loop_points));
+            for (int loop_eid : loop_eids) {
+                visited_edges.insert(loop_eid);
+            }
+        }
+    }
+
+    return loops;
+}
+
+static bool select_best_loop_by_samples(const std::vector<std::vector<Point2D>>& loops,
+                                        const std::vector<glm::dvec2>& sample_positions,
+                                        int& out_loop_index,
+                                        ProjRes& out_first_proj,
+                                        ProjRes& out_last_proj,
+                                        std::vector<double>& out_projected_samples) {
+    out_loop_index = -1;
+    out_projected_samples.clear();
+    if (loops.empty() || sample_positions.empty()) return false;
+
+    double best_score = std::numeric_limits<double>::infinity();
+
+    for (int loop_index = 0; loop_index < (int)loops.size(); ++loop_index) {
+        const auto& loop = loops[loop_index];
+        double total_len = 0.0;
+        double diag = 0.0;
+        if (!compute_loop_diagnostics(loop, total_len, diag)) continue;
+
+        double max_dist2 = 0.0;
+        double sum_dist2 = 0.0;
+        ProjRes first_proj{};
+        ProjRes last_proj{};
+        std::vector<double> projected_samples;
+        projected_samples.reserve(sample_positions.size());
+
+        for (std::size_t i = 0; i < sample_positions.size(); ++i) {
+            double tmp_len = 0.0;
+            const ProjRes pr = project_point_to_loop_s(loop, sample_positions[i], tmp_len);
+            max_dist2 = std::max(max_dist2, pr.dist2);
+            sum_dist2 += pr.dist2;
+            projected_samples.push_back(pr.s);
+
+            if (i == 0) first_proj = pr;
+            if (i + 1 == sample_positions.size()) last_proj = pr;
+        }
+
+        const double avg_dist2 = sum_dist2 / std::max<std::size_t>(1, sample_positions.size());
+        const double score = max_dist2 * 4.0 + avg_dist2;
+        if (score < best_score) {
+            best_score = score;
+            out_loop_index = loop_index;
+            out_first_proj = first_proj;
+            out_last_proj = last_proj;
+            out_projected_samples = std::move(projected_samples);
+        }
+    }
+
+    return out_loop_index >= 0;
+}
+
 static bool compute_loop_diagnostics(const std::vector<Point2D>& loop,
                                      double& out_total_len,
                                      double& out_diag) {
@@ -384,7 +494,7 @@ void BoundaryCondition::reset() {
     edge_ids_.clear();
     start_point_ = s_invalid;
     end_point_ = s_invalid;
-    loop_index_ = s_invalid;
+    remap_segments_.clear();
     has_param_ = false;
     has_geometry_ = false;
     arc_positions_.clear();
@@ -395,10 +505,11 @@ void BoundaryCondition::set_edge_ids(const std::vector<int>& edge_ids) {
 
     has_geometry_ = false;
     arc_positions_.clear();
+    remap_segments_.clear();
     has_param_ = false;
-    loop_index_ = s_invalid;
 
     capture_geometry_from_edges();
+    capture_parameterization_from_edges();
 }
 
 void BoundaryCondition::set_start_point(int start_point) {
@@ -622,7 +733,7 @@ void BoundaryCondition::clear_selection() {
     edge_ids_.clear();
     has_geometry_ = false;
     arc_positions_.clear();
-    loop_index_ = s_invalid;
+    remap_segments_.clear();
     has_param_ = false;
 }
 
@@ -634,6 +745,11 @@ void BoundaryCondition::cancel_selection() {
 
 void BoundaryCondition::rebuild() {
     edge_ids_ = compute_boundary_arc_edges(triangulation_result(), start_point_, end_point_, path_mode_);
+
+    has_geometry_ = false;
+    arc_positions_.clear();
+    capture_geometry_from_edges();
+    capture_parameterization_from_edges();
 }
 
 void BoundaryCondition::capture_geometry_from_edges() {
@@ -644,39 +760,14 @@ void BoundaryCondition::capture_geometry_from_edges(const DelaunayTriangulationR
     if (edge_ids_.empty() || has_geometry_) return;
     if (R.edges.empty() || R.points.empty()) return;
 
+    std::vector<int> ordered_edge_ids;
     std::vector<int> arc_vertices;
-    arc_vertices.reserve(edge_ids_.size() + 1);
-
-    for (std::size_t i = 0; i < edge_ids_.size(); ++i) {
-        const int eid = edge_ids_[i];
-        if ((unsigned)eid >= (unsigned)R.edges.size()) continue;
-        const auto& edge = R.edges[eid];
-
-        if (i == 0) {
-            arc_vertices.push_back(edge.a);
-            arc_vertices.push_back(edge.b);
-            continue;
-        }
-
-        if (arc_vertices.empty()) {
-            arc_vertices.push_back(edge.a);
-            arc_vertices.push_back(edge.b);
-            continue;
-        }
-
-        const int last_v = arc_vertices.back();
-        if (edge.a == last_v) {
-            arc_vertices.push_back(edge.b);
-        } else if (edge.b == last_v) {
-            arc_vertices.push_back(edge.a);
-        } else if (arc_vertices.size() > 1 && edge.a == arc_vertices[arc_vertices.size() - 2]) {
-            std::reverse(arc_vertices.begin(), arc_vertices.end());
-            arc_vertices.push_back(edge.b);
-        } else if (arc_vertices.size() > 1 && edge.b == arc_vertices[arc_vertices.size() - 2]) {
-            std::reverse(arc_vertices.begin(), arc_vertices.end());
-            arc_vertices.push_back(edge.a);
-        }
+    bool is_closed = false;
+    if (!order_boundary_chain(R, edge_ids_, ordered_edge_ids, arc_vertices, is_closed) || is_closed) {
+        return;
     }
+
+    edge_ids_ = std::move(ordered_edge_ids);
 
     arc_positions_.clear();
     arc_positions_.reserve(arc_vertices.size());
@@ -693,81 +784,146 @@ void BoundaryCondition::capture_geometry_from_edges(const DelaunayTriangulationR
     }
 }
 
-void BoundaryCondition::remap_after_retriangulation() {
-    const int old_edge_count = (int)edge_ids_.size();
+// Find the nearest vertex to a world position.
+// For remapping captured BC endpoints, the original boundary corner/endpoint
+// coordinates are preserved in the refined mesh, so an exact-or-nearest scan
+// over all vertices is sufficient and avoids relying on remapped EdgeInfo ids.
+static int find_nearest_boundary_vertex(const DelaunayTriangulationResult& R,
+                                        const glm::dvec2& target) {
+    if (R.points.empty()) return -1;
 
-    const auto& R = triangulation_result();
-    PlanarMeshComponent* mc = mesh_component();
-    if (!mc) {
-        edge_ids_.clear();
-        start_point_ = s_invalid;
-        end_point_ = s_invalid;
-        return;
+    constexpr double exact_eps = 1e-9;
+    constexpr double exact_eps2 = exact_eps * exact_eps;
+
+    int nearest_vertex = -1;
+    double nearest_d2 = std::numeric_limits<double>::infinity();
+
+    for (std::size_t i = 0; i < R.points.size(); ++i) {
+        const glm::dvec2& point = R.points[i].p;
+        const double dx = point.x - target.x;
+        const double dy = point.y - target.y;
+        const double d2 = dx * dx + dy * dy;
+
+        if (d2 <= exact_eps2) {
+            return static_cast<int>(i);
+        }
+        if (d2 < nearest_d2) {
+            nearest_d2 = d2;
+            nearest_vertex = static_cast<int>(i);
+        }
     }
 
-    if (!has_param_) {
-        glm::dvec2 p0(0.0), p1(0.0);
-        bool have_endpoints = false;
+    return nearest_vertex;
+}
 
-        if (has_geometry_ && !arc_positions_.empty()) {
-            p0 = arc_positions_.front();
-            p1 = arc_positions_.back();
-            have_endpoints = true;
-        } else if ((unsigned)start_point_ < (unsigned)R.points.size() &&
-                   (unsigned)end_point_ < (unsigned)R.points.size()) {
-            p0 = R.points[start_point_].p;
-            p1 = R.points[end_point_].p;
-            have_endpoints = true;
-        } else if (!edge_ids_.empty()) {
-            int v0 = s_invalid;
-            int v1 = s_invalid;
-            if (compute_chain_endpoints(R, edge_ids_, v0, v1) &&
-                (unsigned)v0 < (unsigned)R.points.size() &&
-                (unsigned)v1 < (unsigned)R.points.size()) {
-                start_point_ = v0;
-                end_point_ = v1;
-                p0 = R.points[v0].p;
-                p1 = R.points[v1].p;
-                have_endpoints = true;
+bool BoundaryCondition::capture_parameterization_from_edges() {
+    return capture_parameterization_from_edges(triangulation_result());
+}
+
+bool BoundaryCondition::capture_parameterization_from_edges(const DelaunayTriangulationResult& R) {
+    remap_segments_.clear();
+    has_param_ = false;
+
+    if (edge_ids_.empty() || R.edges.empty() || R.points.empty()) {
+        return false;
+    }
+
+    if (!has_geometry_ || arc_positions_.empty()) {
+        capture_geometry_from_edges(R);
+    }
+
+    // Build the BC-local subgraph from edge_ids_ (boundary edges only).
+    std::unordered_map<int, std::vector<std::pair<int, int>>> graph;
+    for (int eid : edge_ids_) {
+        if ((unsigned)eid >= (unsigned)R.edges.size()) continue;
+        const auto& e = R.edges[eid];
+        if (!e.on_boundary) continue;
+        graph[e.a].push_back({e.b, eid});
+        graph[e.b].push_back({e.a, eid});
+    }
+    if (graph.empty()) return false;
+
+    // Collect chain start vertices (degree-1 in local subgraph).
+    std::vector<int> chain_starts;
+    for (const auto& [v, nbrs] : graph) {
+        if ((int)nbrs.size() == 1) chain_starts.push_back(v);
+    }
+    // Closed loop has no degree-1 vertices: pick any vertex.
+    if (chain_starts.empty()) {
+        chain_starts.push_back(graph.begin()->first);
+    }
+
+    // Walk each chain and record its world-space start/end positions.
+    std::unordered_set<int> used_edges;
+    for (int sv : chain_starts) {
+        // Skip if all edges from sv are already walked (chain visited from other end).
+        bool any_unvisited = false;
+        for (const auto& [nb, eid] : graph[sv]) {
+            if (!used_edges.count(eid)) { any_unvisited = true; break; }
+        }
+        if (!any_unvisited) continue;
+
+        int cur = sv;
+        int end_v = sv;
+        while (true) {
+            bool moved = false;
+            for (const auto& [nb, eid] : graph[cur]) {
+                if (used_edges.count(eid)) continue;
+                used_edges.insert(eid);
+                cur = nb;
+                moved = true;
+                break;
             }
+            if (!moved) { end_v = cur; break; }
         }
 
-        if (have_endpoints) {
-            const auto& loops = mc->boundary_loops();
-            int best_L = -1;
-            double best_score = std::numeric_limits<double>::infinity();
-            ProjRes best_p0{};
-            ProjRes best_p1{};
-
-            for (int L = 0; L < (int)loops.size(); ++L) {
-                double total_len = 0.0;
-                double diag = 0.0;
-                if (!compute_loop_diagnostics(loops[L].points, total_len, diag)) continue;
-
-                double tmp_len0 = 0.0;
-                double tmp_len1 = 0.0;
-                const ProjRes r0 = project_point_to_loop_s(loops[L].points, p0, tmp_len0);
-                const ProjRes r1 = project_point_to_loop_s(loops[L].points, p1, tmp_len1);
-                const double score = std::max(r0.dist2, r1.dist2);
-
-                if (score < best_score) {
-                    best_score = score;
-                    best_L = L;
-                    best_p0 = r0;
-                    best_p1 = r1;
+        if ((unsigned)sv  < (unsigned)R.points.size() &&
+            (unsigned)end_v < (unsigned)R.points.size()) {
+            // Detect which path_mode_ actually matches the selected edges.
+            BoundaryConditionPathMode detected_mode = path_mode_;
+            const BoundaryConditionPathMode modes[] = {
+                BoundaryConditionPathMode::Shorter,
+                BoundaryConditionPathMode::Longer,
+                BoundaryConditionPathMode::CW,
+                BoundaryConditionPathMode::CCW,
+            };
+            for (BoundaryConditionPathMode m : modes) {
+                const auto arc = compute_boundary_arc_edges(R, sv, end_v, m);
+                if (same_edge_set(arc, edge_ids_)) {
+                    detected_mode = m;
+                    break;
                 }
             }
 
-            if (best_L >= 0) {
-                loop_index_ = best_L;
-                start_s_ = best_p0.s;
-                end_s_ = best_p1.s;
-                has_param_ = true;
-            }
+            remap_segments_.push_back({R.points[sv].p, R.points[end_v].p, detected_mode});
         }
     }
 
-    if (!has_param_ || loop_index_ < 0) {
+    // Also update start/end vertex IDs for the first chain.
+    if (!remap_segments_.empty() && !chain_starts.empty()) {
+        start_point_ = chain_starts.front();
+        // Re-walk first chain to find end_v (we already stored end_world, recover v).
+        // Just search R.points for the closest point to end_world.
+        const glm::dvec2& end_world = remap_segments_.front().end_world;
+        int best = -1;
+        double best_d2 = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < (int)R.points.size(); ++i) {
+            const glm::dvec2& p = R.points[i].p;
+            const double d2 = (p.x - end_world.x)*(p.x - end_world.x) +
+                              (p.y - end_world.y)*(p.y - end_world.y);
+            if (d2 < best_d2) { best_d2 = d2; best = i; }
+        }
+        end_point_ = best;
+    }
+
+    has_param_ = !remap_segments_.empty();
+    return has_param_;
+}
+
+void BoundaryCondition::remap_after_retriangulation() {
+    const int old_edge_count = (int)edge_ids_.size();
+
+    if (remap_segments_.empty()) {
         LOGT_WARN(LogMath,
                   "BC remap failed: no stable boundary parameterization (had %d edges)",
                   old_edge_count);
@@ -777,63 +933,137 @@ void BoundaryCondition::remap_after_retriangulation() {
         return;
     }
 
-    const auto& loops = mc->boundary_loops();
-    if (loop_index_ >= (int)loops.size()) {
-        LOGT_WARN(LogMath, "BC remap failed: loop_index out of range (%d)", loop_index_);
+    const auto& R = triangulation_result();
+
+    std::vector<int> new_edge_ids;
+    int new_start = s_invalid;
+    int new_end   = s_invalid;
+
+    for (const auto& seg : remap_segments_) {
+        const int v0 = find_nearest_boundary_vertex(R, seg.start_world);
+        const int v1 = find_nearest_boundary_vertex(R, seg.end_world);
+        if (v0 < 0 || v1 < 0 || v0 == v1) continue;
+
+        const auto arc = compute_boundary_arc_edges(R, v0, v1, seg.mode);
+        if (arc.empty()) continue;
+
+        new_edge_ids.insert(new_edge_ids.end(), arc.begin(), arc.end());
+        if (new_start == s_invalid) new_start = v0;
+        new_end = v1;
+    }
+
+    if (new_edge_ids.empty()) {
+        LOGT_WARN(LogMath,
+                  "BC remap failed: arc reconstruction produced no edges (had %d edges)",
+                  old_edge_count);
         edge_ids_.clear();
         start_point_ = s_invalid;
         end_point_ = s_invalid;
         return;
     }
 
-    double loop_total_len = 0.0;
-    double loop_diag = 0.0;
-    if (!compute_loop_diagnostics(loops[loop_index_].points, loop_total_len, loop_diag)) {
-        LOGT_WARN(LogMath, "BC remap failed: loop diagnostics invalid (loop=%d)", loop_index_);
-        edge_ids_.clear();
-        start_point_ = s_invalid;
-        end_point_ = s_invalid;
-        return;
-    }
-
-    int new_start = -1;
-    int new_end = -1;
-    if (!pick_boundary_vertex_by_param(R,
-                                       loops[loop_index_].points,
-                                       loop_total_len,
-                                       loop_diag,
-                                       start_s_,
-                                       new_start) ||
-        !pick_boundary_vertex_by_param(R,
-                                       loops[loop_index_].points,
-                                       loop_total_len,
-                                       loop_diag,
-                                       end_s_,
-                                       new_end)) {
-        LOGT_WARN(LogMath, "BC remap failed: could not pick boundary vertices by parameter");
-        edge_ids_.clear();
-        start_point_ = s_invalid;
-        end_point_ = s_invalid;
-        return;
-    }
-
+    edge_ids_    = std::move(new_edge_ids);
     start_point_ = new_start;
-    end_point_ = new_end;
-    edge_ids_ = compute_boundary_arc_edges(R, start_point_, end_point_, path_mode_);
+    end_point_   = new_end;
 
     has_geometry_ = false;
     arc_positions_.clear();
     capture_geometry_from_edges(R);
 
     LOGT_INFO(LogMath,
-              "BC remap(param): loop=%d s=(%.6f->%.6f) v%d->v%d edges %d->%d",
-              loop_index_,
-              start_s_,
-              end_s_,
-              new_start,
-              new_end,
+              "BC remap: %d seg(s) %d->%d edges",
+              (int)remap_segments_.size(),
               old_edge_count,
               (int)edge_ids_.size());
+}
+
+bool BoundaryCondition::order_boundary_chain(const DelaunayTriangulationResult& R,
+                                             const std::vector<int>& edge_ids,
+                                             std::vector<int>& ordered_edge_ids,
+                                             std::vector<int>& ordered_vertices,
+                                             bool& is_closed) {
+    ordered_edge_ids.clear();
+    ordered_vertices.clear();
+    is_closed = false;
+
+    if (edge_ids.empty()) return false;
+
+    std::unordered_map<int, std::vector<std::pair<int, int>>> graph;
+    graph.reserve(edge_ids.size() * 2);
+
+    int valid_edges = 0;
+    for (int eid : edge_ids) {
+        if ((unsigned)eid >= (unsigned)R.edges.size()) continue;
+        const auto& edge = R.edges[eid];
+        if (!edge.on_boundary) continue;
+
+        graph[edge.a].push_back({edge.b, eid});
+        graph[edge.b].push_back({edge.a, eid});
+        ++valid_edges;
+    }
+
+    if (valid_edges == 0 || graph.empty()) return false;
+
+    std::vector<int> endpoints;
+    endpoints.reserve(2);
+    for (const auto& [vertex, neighbors] : graph) {
+        if (neighbors.size() == 1) {
+            endpoints.push_back(vertex);
+        } else if (neighbors.size() != 2) {
+            return false;
+        }
+    }
+
+    if (endpoints.size() == 2) {
+        is_closed = false;
+    } else if (endpoints.empty()) {
+        is_closed = true;
+    } else {
+        return false;
+    }
+
+    const int start_vertex = is_closed ? graph.begin()->first : endpoints.front();
+    int current = start_vertex;
+    int previous = s_invalid;
+    std::unordered_set<int> used_edges;
+    used_edges.reserve(edge_ids.size());
+    ordered_vertices.push_back(current);
+
+    while (true) {
+        int next_vertex = s_invalid;
+        int next_edge = s_invalid;
+
+        const auto graph_it = graph.find(current);
+        if (graph_it == graph.end()) return false;
+
+        for (const auto& [neighbor, eid] : graph_it->second) {
+            if (used_edges.count(eid) > 0) continue;
+            if (!is_closed && neighbor == previous && graph_it->second.size() > 1) continue;
+
+            next_vertex = neighbor;
+            next_edge = eid;
+            break;
+        }
+
+        if (next_edge == s_invalid) {
+            break;
+        }
+
+        used_edges.insert(next_edge);
+        ordered_edge_ids.push_back(next_edge);
+        ordered_vertices.push_back(next_vertex);
+        previous = current;
+        current = next_vertex;
+
+        if (is_closed && current == start_vertex) {
+            break;
+        }
+    }
+
+    if ((int)used_edges.size() != valid_edges) return false;
+    if (!is_closed && ordered_vertices.size() != ordered_edge_ids.size() + 1) return false;
+
+    return true;
 }
 
 PlanarMeshComponent* BoundaryCondition::mesh_component() const {

@@ -1,6 +1,8 @@
 #include "fem_error_analysis_window.h"
 #include "geom/planar_mesh/planar_mesh_component.h"
+#include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
+#include "math/pde/pde_presets.h"
 #include "geom/delaunay_types.h"
 
 #include <imgui/imgui.h>
@@ -11,6 +13,7 @@
 #include <iomanip>
 #include <cstring>
 #include <random>
+#include <set>
 
 #include "log_categories.h"
 #include "math/fem/fem_balance_metrics.h"
@@ -89,6 +92,253 @@ static inline bool sample_points_in_mesh(
     return true;
 }
 
+enum class RectangleSide {
+    Unknown,
+    Left,
+    Right,
+    Bottom,
+    Top,
+};
+
+struct RectangleLaplaceBenchmark {
+    double xmin = 0.0;
+    double xmax = 0.0;
+    double ymin = 0.0;
+    double ymax = 0.0;
+    double left_value = 0.0;
+    double right_value = 0.0;
+    bool has_left = false;
+    bool has_right = false;
+    bool has_top_neumann = false;
+    bool has_bottom_neumann = false;
+};
+
+static RectangleSide classify_rectangle_side(const glm::dvec2& point,
+                                             const RectangleLaplaceBenchmark& rect,
+                                             double tol) {
+    const bool on_left = std::abs(point.x - rect.xmin) <= tol;
+    const bool on_right = std::abs(point.x - rect.xmax) <= tol;
+    const bool on_bottom = std::abs(point.y - rect.ymin) <= tol;
+    const bool on_top = std::abs(point.y - rect.ymax) <= tol;
+    const int hits = (on_left ? 1 : 0) + (on_right ? 1 : 0) + (on_bottom ? 1 : 0) + (on_top ? 1 : 0);
+    if (hits != 1) return RectangleSide::Unknown;
+    if (on_left) return RectangleSide::Left;
+    if (on_right) return RectangleSide::Right;
+    if (on_bottom) return RectangleSide::Bottom;
+    if (on_top) return RectangleSide::Top;
+    return RectangleSide::Unknown;
+}
+
+static bool point_on_rectangle_perimeter(const glm::dvec2& point,
+                                         const RectangleLaplaceBenchmark& rect,
+                                         double tol) {
+    const bool within_x = point.x >= rect.xmin - tol && point.x <= rect.xmax + tol;
+    const bool within_y = point.y >= rect.ymin - tol && point.y <= rect.ymax + tol;
+    if (!within_x || !within_y) return false;
+
+    return std::abs(point.x - rect.xmin) <= tol ||
+           std::abs(point.x - rect.xmax) <= tol ||
+           std::abs(point.y - rect.ymin) <= tol ||
+           std::abs(point.y - rect.ymax) <= tol;
+}
+
+static bool try_build_rectangle_laplace_exact(const PlanarMeshComponent& mesh,
+                                              const PDEComponent& pde,
+                                              ExactSolution& out,
+                                              std::string* reason = nullptr) {
+    PDEPreset* preset = pde.get_mesh_preset(const_cast<PlanarMeshComponent*>(&mesh));
+    if (!preset || !preset->is_exactly<PDEPreset_Laplace>()) {
+        if (reason) *reason = "Benchmark exact solution requires the Laplace preset";
+        return false;
+    }
+    if (mesh.boundary_loops().size() != 1) {
+        if (reason) *reason = "Benchmark exact solution requires one outer boundary loop";
+        return false;
+    }
+    if (!mesh.inner_boundaries().empty()) {
+        if (reason) *reason = "Benchmark exact solution is disabled for domains with holes";
+        return false;
+    }
+
+    const auto& R = mesh.triangulation_result();
+    if (R.points.empty() || R.edges.empty()) {
+        if (reason) *reason = "Triangulation is missing boundary edges/points";
+        return false;
+    }
+
+    std::vector<int> boundary_vertex_ids;
+    boundary_vertex_ids.reserve(R.points.size());
+
+    RectangleLaplaceBenchmark rect;
+    bool have_boundary_vertex = false;
+    int boundary_edge_count = 0;
+    for (const auto& edge : R.edges) {
+        if (!edge.on_boundary) continue;
+
+        if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+            if (reason) *reason = "Boundary edge references invalid vertices";
+            return false;
+        }
+
+        const Point2D& pa = R.points[edge.a];
+        const Point2D& pb = R.points[edge.b];
+        if (!have_boundary_vertex) {
+            rect.xmin = rect.xmax = pa.x();
+            rect.ymin = rect.ymax = pa.y();
+            have_boundary_vertex = true;
+        }
+
+        rect.xmin = std::min(rect.xmin, std::min(pa.x(), pb.x()));
+        rect.xmax = std::max(rect.xmax, std::max(pa.x(), pb.x()));
+        rect.ymin = std::min(rect.ymin, std::min(pa.y(), pb.y()));
+        rect.ymax = std::max(rect.ymax, std::max(pa.y(), pb.y()));
+
+        boundary_vertex_ids.push_back(edge.a);
+        boundary_vertex_ids.push_back(edge.b);
+        ++boundary_edge_count;
+    }
+
+    if (!have_boundary_vertex || boundary_edge_count < 4) {
+        if (reason) *reason = "Mesh boundary is too small to classify as a rectangle";
+        return false;
+    }
+
+    const double width = rect.xmax - rect.xmin;
+    const double height = rect.ymax - rect.ymin;
+    const double scale = std::max(width, height);
+    if (!(width > 0.0) || !(height > 0.0) || !(scale > 0.0)) {
+        if (reason) *reason = "Outer loop has degenerate rectangle bounds";
+        return false;
+    }
+
+    const double side_tol = std::max(1e-8, 1e-6 * scale);
+    const double flux_tol = std::max(1e-10, 1e-8 * scale);
+
+    std::sort(boundary_vertex_ids.begin(), boundary_vertex_ids.end());
+    boundary_vertex_ids.erase(std::unique(boundary_vertex_ids.begin(), boundary_vertex_ids.end()), boundary_vertex_ids.end());
+
+    for (int vid : boundary_vertex_ids) {
+        const glm::dvec2 pos(R.points[(size_t)vid].x(), R.points[(size_t)vid].y());
+        if (!point_on_rectangle_perimeter(pos, rect, side_tol)) {
+            if (reason) *reason = "Mesh boundary is not axis-aligned rectangular";
+            return false;
+        }
+    }
+
+    for (const auto& edge : R.edges) {
+        if (!edge.on_boundary) continue;
+        const glm::dvec2 mid = 0.5 * (R.points[edge.a].p + R.points[edge.b].p);
+        if (classify_rectangle_side(mid, rect, side_tol) == RectangleSide::Unknown) {
+            if (reason) *reason = "Mesh boundary is not axis-aligned rectangular";
+            return false;
+        }
+    }
+
+    for (const BoundaryCondition* bc : mesh.boundary_conditions()) {
+        if (!bc || bc->edge_ids().empty()) continue;
+        if (bc->type() == BoundaryConditionType::None) continue;
+
+        std::set<RectangleSide> sides;
+        for (int edge_id : bc->edge_ids()) {
+            if ((unsigned)edge_id >= (unsigned)R.edges.size()) {
+                if (reason) *reason = "Boundary condition references invalid edge ids";
+                return false;
+            }
+            const auto& edge = R.edges[edge_id];
+            if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+                if (reason) *reason = "Boundary condition references invalid boundary vertices";
+                return false;
+            }
+            const glm::dvec2 mid = 0.5 * (R.points[edge.a].p + R.points[edge.b].p);
+            const RectangleSide side = classify_rectangle_side(mid, rect, side_tol);
+            if (side == RectangleSide::Unknown) {
+                if (reason) *reason = "Some selected BC edges do not lie on a single rectangle side";
+                return false;
+            }
+            sides.insert(side);
+        }
+
+        if (bc->type() == BoundaryConditionType::Dirichlet) {
+            for (RectangleSide side : sides) {
+                if (side == RectangleSide::Left) {
+                    if (rect.has_left && std::abs(rect.left_value - bc->value()) > flux_tol) {
+                        if (reason) *reason = "Left boundary has conflicting Dirichlet values";
+                        return false;
+                    }
+                    rect.left_value = bc->value();
+                    rect.has_left = true;
+                } else if (side == RectangleSide::Right) {
+                    if (rect.has_right && std::abs(rect.right_value - bc->value()) > flux_tol) {
+                        if (reason) *reason = "Right boundary has conflicting Dirichlet values";
+                        return false;
+                    }
+                    rect.right_value = bc->value();
+                    rect.has_right = true;
+                } else {
+                    if (reason) *reason = "Dirichlet benchmark BCs must be on the left/right sides only";
+                    return false;
+                }
+            }
+        } else if (bc->type() == BoundaryConditionType::Neumann) {
+            if (std::abs(bc->value()) > flux_tol) {
+                if (reason) *reason = "Benchmark requires zero Neumann data on top/bottom";
+                return false;
+            }
+            for (RectangleSide side : sides) {
+                if (side == RectangleSide::Top) {
+                    rect.has_top_neumann = true;
+                } else if (side == RectangleSide::Bottom) {
+                    rect.has_bottom_neumann = true;
+                } else {
+                    if (reason) *reason = "Neumann benchmark BCs must be on the top/bottom sides only";
+                    return false;
+                }
+            }
+        } else {
+            if (reason) *reason = "Benchmark exact solution does not support Robin boundary conditions";
+            return false;
+        }
+    }
+
+    if (!rect.has_left || !rect.has_right || !rect.has_top_neumann || !rect.has_bottom_neumann) {
+        if (reason) {
+            *reason = "Need Dirichlet on left/right and zero Neumann on top/bottom for the rectangle benchmark";
+        }
+        return false;
+    }
+
+    const double inv_width = 1.0 / width;
+    const double slope_x = (rect.right_value - rect.left_value) * inv_width;
+
+    out.u_exact = [rect, inv_width](double x, double) -> double {
+        return rect.left_value + (x - rect.xmin) * inv_width * (rect.right_value - rect.left_value);
+    };
+    out.grad_exact = [slope_x](double, double, double& ux, double& uy) -> bool {
+        ux = slope_x;
+        uy = 0.0;
+        return true;
+    };
+    out.has_u = true;
+    out.has_grad = true;
+    if (reason) *reason = "Using rectangle benchmark exact solution";
+    return true;
+}
+
+static std::string describe_exact_solution_status(const PlanarMeshComponent* mesh,
+                                                  const PDEComponent* pde) {
+    if (!pde) return "No PDE selected";
+    if (pde->has_exact_solution()) return "Using PDE preset exact solution";
+    if (!mesh) return "No cached mesh for benchmark exact solution";
+
+    ExactSolution exact;
+    std::string reason;
+    if (try_build_rectangle_laplace_exact(*mesh, *pde, exact, &reason)) {
+        return reason;
+    }
+    if (!reason.empty()) return reason;
+    return "No exact solution";
+}
+
 
 void FEMErrorAnalysisWindow::ensure_cache_(const PlanarMeshComponent& mesh) {
     const auto& R = mesh.triangulation_result();
@@ -112,22 +362,30 @@ void FEMErrorAnalysisWindow::ensure_cache_(const PlanarMeshComponent& mesh) {
 bool FEMErrorAnalysisWindow::try_fill_exact_(ExactSolution& out, const PDEComponent* pde) const {
     out.has_u = false;
     out.has_grad = false;
-    
-    if (!pde || !pde->has_exact_solution()) return false;
-    
-    out.u_exact = [pde](double x, double y) -> double {
-        double u = 0.0, ux = 0.0, uy = 0.0;
-        return pde->get_exact_solution(x, y, u, &ux, &uy) ? u : 0.0;
-    };
-    
-    out.grad_exact = [pde](double x, double y, double& ux, double& uy) -> bool {
-        double u = 0.0;
-        return pde->get_exact_solution(x, y, u, &ux, &uy);
-    };
-    
-    out.has_u = true;
-    out.has_grad = true;
-    return true;
+
+    if (!pde) return false;
+
+    if (pde->has_exact_solution()) {
+        out.u_exact = [pde](double x, double y) -> double {
+            double u = 0.0, ux = 0.0, uy = 0.0;
+            return pde->get_exact_solution(x, y, u, &ux, &uy) ? u : 0.0;
+        };
+
+        out.grad_exact = [pde](double x, double y, double& ux, double& uy) -> bool {
+            double u = 0.0;
+            return pde->get_exact_solution(x, y, u, &ux, &uy);
+        };
+
+        out.has_u = true;
+        out.has_grad = true;
+        return true;
+    }
+
+    if (cached_mesh_ && try_build_rectangle_laplace_exact(*cached_mesh_, *pde, out)) {
+        return true;
+    }
+
+    return false;
 }
 
 bool FEMErrorAnalysisWindow::selection_point_(
@@ -180,11 +438,14 @@ void FEMErrorAnalysisWindow::draw_section_mesh_info_(const DrawInfo& info) {
     
     ExactSolution exact;
     const bool has_exact = try_fill_exact_(exact, info.pde);
+    const std::string exact_status = describe_exact_solution_status(cached_mesh_, info.pde);
     
     if (has_exact) {
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "✓ Exact solution available");
+        ImGui::TextDisabled("%s", exact_status.c_str());
     } else {
         ImGui::TextDisabled("No exact solution");
+        ImGui::TextDisabled("%s", exact_status.c_str());
     }
     
     FEMReferenceProvider fb(info.pde, info.mesh);
@@ -296,7 +557,7 @@ void FEMErrorAnalysisWindow::draw_section_global_norms_(const DrawInfo& info) {
     const bool has_exact = try_fill_exact_(exact, info.pde);
     
     if (!has_exact) {
-        ImGui::TextDisabled("Requires exact solution from PDE preset");
+        ImGui::TextDisabled("%s", describe_exact_solution_status(cached_mesh_, info.pde).c_str());
         return;
     }
     
@@ -309,16 +570,26 @@ void FEMErrorAnalysisWindow::draw_section_global_norms_(const DrawInfo& info) {
     if (has_global_error_) {
         ImGui::Spacing();
         ImGui::Separator();
-        
-        ImGui::Text("L∞ (nodal):  %.6e", global_error_.linf_nodes);
-        ImGui::Text("L²:          %.6e", global_error_.l2);
-        
+
+        ImGui::Text("L∞ abs:      %.6e", global_error_.linf_nodes);
+        if (global_error_.has_relative) {
+            ImGui::Text("L∞ rel:      %.6e", global_error_.linf_nodes_rel);
+        }
+
+        ImGui::Text("L2 abs:      %.6e", global_error_.l2);
+        if (global_error_.has_relative) {
+            ImGui::Text("L2 rel:      %.6e", global_error_.l2_rel);
+        }
+
         if (global_error_.has_grad) {
-            ImGui::Text("H¹ semi:     %.6e", global_error_.h1_semi);
-            const double h1_full = std::sqrt(
-                global_error_.l2 * global_error_.l2 + 
-                global_error_.h1_semi * global_error_.h1_semi);
-            ImGui::Text("H¹ full:     %.6e", h1_full);
+            ImGui::Text("W1,2 semi abs: %.6e", global_error_.h1_semi);
+            if (global_error_.has_relative) {
+                ImGui::Text("W1,2 semi rel: %.6e", global_error_.h1_semi_rel);
+            }
+            ImGui::Text("W1,2 full abs: %.6e", global_error_.h1_full);
+            if (global_error_.has_relative) {
+                ImGui::Text("W1,2 full rel: %.6e", global_error_.h1_full_rel);
+            }
         }
         
         if (global_error_.has_energy) {
@@ -362,11 +633,26 @@ void FEMErrorAnalysisWindow::draw_section_convergence_study_(const DrawInfo& inf
     study_config_.max_level = std::max(study_config_.min_level, 
                                        std::min(study_config_.max_level, 10));
 
-    ImGui::TextDisabled("Note: reference solves use uniform refinement; large base meshes can explode in size quickly.");
+    ImGui::TextDisabled("Note: large reference levels can still be expensive; use exact or triangulation-based refinement when available.");
     
     if (!study_config_.use_exact_solution) {
         ImGui::InputInt("Reference level (finest)", &study_config_.ref_level);
         study_config_.ref_level = std::max(study_config_.max_level + 1, study_config_.ref_level);
+
+        int refinement_strategy =
+            study_config_.reference_refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                ? 1
+                : 0;
+        if (ImGui::Combo("Reference refinement",
+                         &refinement_strategy,
+                         "FEM subdivision\0Triangulation subdivision\0")) {
+            study_config_.reference_refinement_strategy =
+                refinement_strategy == 1
+                    ? ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                    : ReferenceRefinementStrategy::UniformFemSubdivision;
+        }
+        ImGui::TextDisabled(
+            "Triangulation subdivision keeps the study on a nested mesh family and avoids FEM-only DOF blow-up on dense bases.");
 
         ImGui::Checkbox("Remove mean offset (zero-mean compare)", &study_config_.remove_mean_offset);
         ImGui::SameLine();
@@ -433,17 +719,30 @@ void FEMErrorAnalysisWindow::draw_section_convergence_study_(const DrawInfo& inf
         ImGui::Spacing();
         ImGui::Text("Converge data: %d levels", (int)study_results_.data.size());
         
+        if (study_results_.avg_rate_linf > 0.0) {
+            ImGui::Text("Average L∞ rate: %.3f", study_results_.avg_rate_linf);
+        }
         if (study_results_.avg_rate_l2 > 0.0) {
             ImGui::Text("Average L² rate: %.3f", study_results_.avg_rate_l2);
         }
         if (study_results_.avg_rate_h1 > 0.0) {
-            ImGui::Text("Average H¹ rate: %.3f", study_results_.avg_rate_h1);
+            ImGui::Text("Average W1,2 rate: %.3f", study_results_.avg_rate_h1);
+        }
+        if (study_results_.avg_rate_energy > 0.0) {
+            ImGui::Text("Average energy rate: %.3f", study_results_.avg_rate_energy);
         }
         
         ImGui::Spacing();
         
         // Table
-        if (ImGui::BeginTable("ConvergenceTable", 8, 
+        const bool show_relative = std::any_of(
+            study_results_.data.begin(),
+            study_results_.data.end(),
+            [](const ConvergenceDataPoint& pt) { return pt.has_relative; }
+        );
+        const int column_count = show_relative ? 10 : 8;
+
+        if (ImGui::BeginTable("ConvergenceTable", column_count, 
                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
                              ImGuiTableFlags_ScrollY, ImVec2(0, 250))) {
             
@@ -452,8 +751,14 @@ void FEMErrorAnalysisWindow::draw_section_convergence_study_(const DrawInfo& inf
             ImGui::TableSetupColumn("DOFs", ImGuiTableColumnFlags_WidthFixed, 60);
             ImGui::TableSetupColumn("L∞", ImGuiTableColumnFlags_WidthFixed, 80);
             ImGui::TableSetupColumn("L²", ImGuiTableColumnFlags_WidthFixed, 80);
+            if (show_relative) {
+                ImGui::TableSetupColumn("L² rel", ImGuiTableColumnFlags_WidthFixed, 80);
+            }
             ImGui::TableSetupColumn("Rate", ImGuiTableColumnFlags_WidthFixed, 50);
-            ImGui::TableSetupColumn("H¹", ImGuiTableColumnFlags_WidthFixed, 80);
+            ImGui::TableSetupColumn("W1,2", ImGuiTableColumnFlags_WidthFixed, 80);
+            if (show_relative) {
+                ImGui::TableSetupColumn("W1,2 rel", ImGuiTableColumnFlags_WidthFixed, 90);
+            }
             ImGui::TableSetupColumn("Rate", ImGuiTableColumnFlags_WidthFixed, 50);
             ImGui::TableHeadersRow();
             
@@ -474,6 +779,15 @@ void FEMErrorAnalysisWindow::draw_section_convergence_study_(const DrawInfo& inf
                 
                 ImGui::TableNextColumn();
                 ImGui::Text("%.3e", pt.l2);
+
+                if (show_relative) {
+                    ImGui::TableNextColumn();
+                    if (pt.has_relative) {
+                        ImGui::Text("%.3e", pt.rel_l2);
+                    } else {
+                        ImGui::TextDisabled("—");
+                    }
+                }
                 
                 ImGui::TableNextColumn();
                 if (pt.rate_l2 > 0.0) {
@@ -484,11 +798,19 @@ void FEMErrorAnalysisWindow::draw_section_convergence_study_(const DrawInfo& inf
                 
                 ImGui::TableNextColumn();
                 if (pt.has_h1) {
-                    ImGui::Text("%.3e", pt.h1_semi);
+                    ImGui::Text("%.3e", pt.h1_full);
                 } else {
                     ImGui::TextDisabled("—");
                 }
-                
+
+                if (show_relative) {
+                    ImGui::TableNextColumn();
+                    if (pt.has_relative && pt.has_h1) {
+                        ImGui::Text("%.3e", pt.rel_h1_full);
+                    } else {
+                        ImGui::TextDisabled("—");
+                    }
+                }
                 ImGui::TableNextColumn();
                 if (pt.rate_h1 > 0.0) {
                     ImGui::Text("%.2f", pt.rate_h1);
@@ -591,6 +913,7 @@ void FEMErrorAnalysisWindow::draw_section_aitken_analysis_(const DrawInfo& info)
                 new_cap.linf = err.linf_nodes;
                 new_cap.l2 = err.l2;
                 new_cap.h1_semi = err.h1_semi;
+                new_cap.h1_full = err.h1_full;
             }
             
             // Shift captures
@@ -673,6 +996,23 @@ void FEMErrorAnalysisWindow::draw_section_aitken_analysis_(const DrawInfo& info)
                     ImGui::Text("  Order p ≈ %.4g", l2_aitken.p);
                 }
             }
+
+            if (aitken_captures_[0].h1_full > 0.0) {
+                auto h1_aitken = aitken_estimate_3<double>(
+                    aitken_captures_[0].h1_full,
+                    aitken_captures_[1].h1_full,
+                    aitken_captures_[2].h1_full,
+                    aitken_captures_[0].h,
+                    aitken_captures_[1].h,
+                    aitken_captures_[2].h
+                );
+
+                if (h1_aitken.valid && h1_aitken.p > 0) {
+                    ImGui::Spacing();
+                    ImGui::Text("W1,2 error:");
+                    ImGui::Text("  Order p ≈ %.4g", h1_aitken.p);
+                }
+            }
             
             // Global comparison (vs finest mesh)
             TriLocator loc_fine;
@@ -687,6 +1027,9 @@ void FEMErrorAnalysisWindow::draw_section_aitken_analysis_(const DrawInfo& info)
                 aitken_captures_[2].mesh, aitken_captures_[2].solution, &loc_fine);
             
             if (e_01.valid && e_12.valid) {
+                const double e_01_h1_full = std::sqrt(e_01.l2 * e_01.l2 + e_01.h1_semi * e_01.h1_semi);
+                const double e_12_h1_full = std::sqrt(e_12.l2 * e_12.l2 + e_12.h1_semi * e_12.h1_semi);
+
                 ImGui::Spacing();
                 ImGui::Text("Global L² (vs finest):");
                 ImGui::Text("  ||u₀ - u₂||_L² = %.6e", e_01.l2);
@@ -696,6 +1039,19 @@ void FEMErrorAnalysisWindow::draw_section_aitken_analysis_(const DrawInfo& info)
                     const double h_ratio = aitken_captures_[0].h / aitken_captures_[1].h;
                     const double p_global = std::log(e_01.l2 / e_12.l2) / std::log(h_ratio);
                     ImGui::Text("  → Rate p ≈ %.4g", p_global);
+                }
+
+                if (e_01.has_grad && e_12.has_grad) {
+                    ImGui::Spacing();
+                    ImGui::Text("Global W1,2 (vs finest):");
+                    ImGui::Text("  ||u₀ - u₂||_W1,2 = %.6e", e_01_h1_full);
+                    ImGui::Text("  ||u₁ - u₂||_W1,2 = %.6e", e_12_h1_full);
+
+                    if (e_01_h1_full > 1e-16 && e_12_h1_full > 1e-16) {
+                        const double h_ratio = aitken_captures_[0].h / aitken_captures_[1].h;
+                        const double p_global_h1 = std::log(e_01_h1_full / e_12_h1_full) / std::log(h_ratio);
+                        ImGui::Text("  → Rate p ≈ %.4g", p_global_h1);
+                    }
                 }
             }
         }
@@ -714,6 +1070,7 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
     }
 
     ImGui::TextDisabled("Solves multiple refinement levels for the current selection and exports CSVs.");
+    ImGui::TextDisabled("Aitken uses uniform triangulation refinement for all levels and the reference solve.");
 
     ImGui::SetNextItemWidth(120);
     ImGui::InputInt("min level", &stress_cfg_.min_level);
@@ -743,6 +1100,35 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
     ImGui::SameLine();
     ImGui::Checkbox("global L2 vs ref", &stress_cfg_.include_global_l2);
 
+    ImGui::SetNextItemWidth(120);
+    ImGui::InputInt("preview level", &stress_cfg_.preview_level);
+    stress_cfg_.preview_level = std::max(0, stress_cfg_.preview_level);
+    ImGui::SameLine();
+    if (ImGui::Button("Preview Aitken Mesh")) {
+        auto* preview_mesh = const_cast<PlanarMeshComponent*>(info.mesh);
+
+        if (aitken_preview_mesh_ != info.mesh || !aitken_preview_has_base_) {
+            aitken_preview_mesh_ = info.mesh;
+            aitken_preview_base_triangulation_ = preview_mesh->triangulation_result();
+            aitken_preview_has_base_ = true;
+            aitken_preview_level_applied_ = -1;
+        }
+
+        if (stress_cfg_.preview_level == aitken_preview_level_applied_) {
+            stress_status_message_ = "Preview level unchanged; mesh already matches level " + std::to_string(stress_cfg_.preview_level);
+        } else {
+            DelaunayTriangulationResult preview_tri = aitken_preview_base_triangulation_;
+            for (int k = 0; k < stress_cfg_.preview_level; ++k) {
+                preview_tri = refine_delaunay_uniform(preview_tri);
+            }
+
+            preview_mesh->update_triangulation(preview_tri);
+            preview_mesh->update_buffers();
+            aitken_preview_level_applied_ = stress_cfg_.preview_level;
+            stress_status_message_ = "Previewed Aitken mesh level " + std::to_string(stress_cfg_.preview_level) + " in canvas";
+        }
+    }
+
     ImGui::Spacing();
 
     if (ImGui::Button("Run + Export CSV")) {
@@ -757,6 +1143,9 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
                   stress_cfg_.include_pointwise ? 1 : 0,
                   stress_cfg_.include_global_l2 ? 1 : 0);
 
+        const ReferenceRefinementStrategy refine_strategy =
+            ReferenceRefinementStrategy::UniformTriangulationSubdivision;
+
         struct LevelSol {
             int level = 0;
             double h = 0.0;
@@ -770,6 +1159,7 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
         for (int lvl = stress_cfg_.min_level; lvl <= stress_cfg_.max_level; ++lvl) {
             ReferenceSolveRequest req;
             req.refinement_level = lvl;
+            req.refinement_strategy = refine_strategy;
             ReferenceSolution out;
             if (!rp->solve_reference(req, out) || !out.sol.is_ready()) {
                 stress_status_message_ = "Solve failed at level " + std::to_string(lvl);
@@ -795,6 +1185,7 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
             LOGT_INFO(LogMath, "Aitken stress: solving reference level %d", stress_cfg_.ref_level);
             ReferenceSolveRequest req;
             req.refinement_level = stress_cfg_.ref_level;
+            req.refinement_strategy = refine_strategy;
             ReferenceSolution out;
             if (!rp->solve_reference(req, out) || !out.sol.is_ready()) {
                 stress_status_message_ = "Reference solve failed at level " + std::to_string(stress_cfg_.ref_level);
@@ -895,39 +1286,64 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
             } else {
                 f.setf(std::ios::scientific);
                 f.precision(16);
-                f << "level,h,l2_vs_ref,rate_l2,aitken_p,aitken_err_est\n";
+                f << "level,h,l2_vs_ref,w12_vs_ref,rate_l2,rate_w12,aitken_p_l2,aitken_err_est_l2,aitken_p_w12,aitken_err_est_w12\n";
 
                 std::vector<double> l2;
+                std::vector<double> h1_full;
                 l2.reserve(levels.size());
+                h1_full.reserve(levels.size());
 
                 for (const auto& L : levels) {
                     auto e = compute_error_vs_reference<double>(L.mesh, L.u, ref_mesh, ref_u, &ref_loc);
                     l2.push_back(e.valid ? e.l2 : std::numeric_limits<double>::quiet_NaN());
+                    h1_full.push_back((e.valid && e.has_grad)
+                        ? std::sqrt(e.l2 * e.l2 + e.h1_semi * e.h1_semi)
+                        : std::numeric_limits<double>::quiet_NaN());
                 }
 
-                LOGT_INFO(LogMath, "Aitken stress: computed L2 vs ref for %zu levels", levels.size());
+                LOGT_INFO(LogMath, "Aitken stress: computed L2/W1,2 vs ref for %zu levels", levels.size());
 
                 for (std::size_t i = 0; i < levels.size(); ++i) {
                     const auto& L = levels[i];
                     const double li = l2[i];
+                    const double hi = h1_full[i];
 
-                    double rate = std::numeric_limits<double>::quiet_NaN();
+                    double rate_l2 = std::numeric_limits<double>::quiet_NaN();
                     if (i > 0 && std::isfinite(l2[i - 1]) && std::isfinite(li) && l2[i - 1] > 0.0 && li > 0.0) {
                         const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
-                        if (std::abs(log_h) > 1e-12) rate = std::log(l2[i - 1] / li) / log_h;
+                        if (std::abs(log_h) > 1e-12) rate_l2 = std::log(l2[i - 1] / li) / log_h;
                     }
 
-                    double ap = std::numeric_limits<double>::quiet_NaN();
-                    double ae = std::numeric_limits<double>::quiet_NaN();
+                    double rate_h1 = std::numeric_limits<double>::quiet_NaN();
+                    if (i > 0 && std::isfinite(h1_full[i - 1]) && std::isfinite(hi) && h1_full[i - 1] > 0.0 && hi > 0.0) {
+                        const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
+                        if (std::abs(log_h) > 1e-12) rate_h1 = std::log(h1_full[i - 1] / hi) / log_h;
+                    }
+
+                    double ap_l2 = std::numeric_limits<double>::quiet_NaN();
+                    double ae_l2 = std::numeric_limits<double>::quiet_NaN();
                     if (i >= 2 && std::isfinite(l2[i - 2]) && std::isfinite(l2[i - 1]) && std::isfinite(li)) {
                         auto est = aitken_estimate_3<double>(l2[i - 2], l2[i - 1], li, levels[i - 2].h, levels[i - 1].h, L.h);
                         if (est.valid) {
-                            ap = est.p;
-                            ae = est.err_fine;
+                            ap_l2 = est.p;
+                            ae_l2 = est.err_fine;
                         }
                     }
 
-                    f << L.level << "," << L.h << "," << li << "," << rate << "," << ap << "," << ae << "\n";
+                    double ap_h1 = std::numeric_limits<double>::quiet_NaN();
+                    double ae_h1 = std::numeric_limits<double>::quiet_NaN();
+                    if (i >= 2 && std::isfinite(h1_full[i - 2]) && std::isfinite(h1_full[i - 1]) && std::isfinite(hi)) {
+                        auto est = aitken_estimate_3<double>(h1_full[i - 2], h1_full[i - 1], hi, levels[i - 2].h, levels[i - 1].h, L.h);
+                        if (est.valid) {
+                            ap_h1 = est.p;
+                            ae_h1 = est.err_fine;
+                        }
+                    }
+
+                    f << L.level << "," << L.h << "," << li << "," << hi << ","
+                      << rate_l2 << "," << rate_h1 << ","
+                      << ap_l2 << "," << ae_l2 << ","
+                      << ap_h1 << "," << ae_h1 << "\n";
                 }
 
                 f.flush();

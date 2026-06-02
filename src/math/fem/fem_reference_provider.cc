@@ -1,4 +1,5 @@
 #include "math/fem/field/fem_reference_provider.h"
+#include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
 #include <algorithm>
 #include <cstdint>
@@ -109,6 +110,19 @@ static FEMMesh build_base_mesh_with_exact_dirichlet_(
     return ::fem::build_fem_mesh_all_boundary_dirichlet(R, u_exact);
 }
 
+static DelaunayTriangulationResult triangulation_with_live_bcs_(
+    const PlanarMeshComponent* mesh
+) {
+    if (!mesh) return {};
+
+    DelaunayTriangulationResult result = mesh->triangulation_result();
+    for (const BoundaryCondition* bc : mesh->boundary_conditions()) {
+        if (!bc || bc->type() == BoundaryConditionType::None) continue;
+        bc->apply(result);
+    }
+    return result;
+}
+
 bool FEMReferenceProvider::solve_reference(
     const ReferenceSolveRequest& req, 
     ReferenceSolution& out) const 
@@ -121,19 +135,57 @@ bool FEMReferenceProvider::solve_reference(
         return false;
     }
 
-    FEMMesh refined_mesh = mesh_->build_fem_mesh();
+    FEMMesh refined_mesh;
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision) {
+        DelaunayTriangulationResult refined_tri = triangulation_with_live_bcs_(mesh_);
+        if (refined_tri.points.empty() || refined_tri.triangles.empty()) {
+            LOGT_ERROR(LogMath, "FEMReferenceProvider: base triangulation is empty.");
+            out.error_message = "Base triangulation is empty";
+            return false;
+        }
+
+        for (int k = 0; k < req.refinement_level; ++k) {
+            refined_tri = refine_delaunay_uniform(refined_tri);
+        }
+
+        refined_mesh = build_fem_mesh(refined_tri);
+        out.triangulation = std::move(refined_tri);
+        out.has_triangulation = true;
+    } else {
+        refined_mesh = mesh_->build_fem_mesh();
+        if (refined_mesh.nodes.empty() || refined_mesh.elems.empty()) {
+            LOGT_ERROR(LogMath, "FEMReferenceProvider: base FEM mesh is empty.");
+            out.error_message = "Base FEM mesh is empty";
+            return false;
+        }
+    }
+
     if (refined_mesh.nodes.empty() || refined_mesh.elems.empty()) {
-        LOGT_ERROR(LogMath, "FEMReferenceProvider: base FEM mesh is empty.");
-        out.error_message = "Base FEM mesh is empty";
+        LOGT_ERROR(LogMath, "FEMReferenceProvider: refined FEM mesh is empty.");
+        out.error_message = "Refined FEM mesh is empty";
         return false;
     }
 
     // Guard against runaway uniform refinement (node/element counts grow ~4x per level).
-    // This is especially important for already-dense meshes (e.g. Sierpinski level-4).
-    const std::size_t base_dofs = refined_mesh.nodes.size();
+    // For triangulation-based refinement the mesh has already been refined above, so we cap
+    // the resulting mesh directly and only apply the growth estimate to FEM subdivision.
+    const std::size_t current_dofs = refined_mesh.nodes.size();
     constexpr std::size_t kMaxRefDofs = 200000; // safety cap to avoid OOM/timeouts
-    {
-        std::size_t est = base_dofs;
+    if (current_dofs > kMaxRefDofs) {
+        out.error_message =
+            "Reference mesh exceeds safety DOF cap before solve. Reduce levels or use an exact solution / different reference strategy.";
+        LOGT_ERROR(LogMath,
+                   "FEMReferenceProvider: %s dofs=%zu ref_level=%d strategy=%s",
+                   out.error_message.c_str(),
+                   current_dofs,
+                   req.refinement_level,
+                   req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                       ? "triangulation"
+                       : "fem");
+        return false;
+    }
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformFemSubdivision) {
+        std::size_t est = current_dofs;
         for (int k = 0; k < req.refinement_level; ++k) {
             if (est > kMaxRefDofs / 4) {
                 est = kMaxRefDofs + 1;
@@ -145,17 +197,23 @@ bool FEMReferenceProvider::solve_reference(
             out.error_message =
                 "Requested refinement level would create an excessively large reference mesh (uniform refinement). "
                 "Reduce levels or use an exact solution / different reference strategy.";
-            LOGT_ERROR(LogMath, "FEMReferenceProvider: %s base_dofs=%zu ref_level=%d", out.error_message.c_str(), base_dofs, req.refinement_level);
+            LOGT_ERROR(LogMath,
+                       "FEMReferenceProvider: %s base_dofs=%zu ref_level=%d",
+                       out.error_message.c_str(),
+                       current_dofs,
+                       req.refinement_level);
             return false;
         }
     }
 
-    for (int k = 0; k < req.refinement_level; ++k) {
-        refined_mesh = refine_fem_mesh_uniform_(refined_mesh);
-        if (refined_mesh.nodes.size() > kMaxRefDofs) {
-            out.error_message = "Reference mesh exceeded safety DOF cap during refinement.";
-            LOGT_ERROR(LogMath, "FEMReferenceProvider: %s dofs=%zu ref_level=%d", out.error_message.c_str(), refined_mesh.nodes.size(), req.refinement_level);
-            return false;
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformFemSubdivision) {
+        for (int k = 0; k < req.refinement_level; ++k) {
+            refined_mesh = refine_fem_mesh_uniform_(refined_mesh);
+            if (refined_mesh.nodes.size() > kMaxRefDofs) {
+                out.error_message = "Reference mesh exceeded safety DOF cap during refinement.";
+                LOGT_ERROR(LogMath, "FEMReferenceProvider: %s dofs=%zu ref_level=%d", out.error_message.c_str(), refined_mesh.nodes.size(), req.refinement_level);
+                return false;
+            }
         }
     }
 
@@ -178,7 +236,12 @@ bool FEMReferenceProvider::solve_reference(
     out.sys = std::move(sys);
     out.has_sys = true;
 
-    LOGT_INFO(LogMath, "FEMReferenceProvider: built reference with refinement level %d", req.refinement_level);
+    LOGT_INFO(LogMath,
+              "FEMReferenceProvider: built reference with refinement level %d (strategy=%s)",
+              req.refinement_level,
+              req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                  ? "triangulation"
+                  : "fem");
     return true;
 }
 
@@ -194,18 +257,55 @@ bool FEMReferenceProviderExactDirichlet::solve_reference(
         return false;
     }
 
-    FEMMesh refined_mesh = build_base_mesh_with_exact_dirichlet_(mesh_, u_exact_);
+    FEMMesh refined_mesh;
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision) {
+        DelaunayTriangulationResult refined_tri = triangulation_with_live_bcs_(mesh_);
+        if (refined_tri.points.empty() || refined_tri.triangles.empty()) {
+            LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: base triangulation is empty.");
+            out.error_message = "Base triangulation is empty";
+            return false;
+        }
+
+        for (int k = 0; k < req.refinement_level; ++k) {
+            refined_tri = refine_delaunay_uniform(refined_tri);
+        }
+
+        refined_mesh = build_fem_mesh_all_boundary_dirichlet(refined_tri, u_exact_);
+        out.triangulation = std::move(refined_tri);
+        out.has_triangulation = true;
+    } else {
+        refined_mesh = build_base_mesh_with_exact_dirichlet_(mesh_, u_exact_);
+        if (refined_mesh.nodes.empty() || refined_mesh.elems.empty()) {
+            LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: base FEM mesh is empty.");
+            out.error_message = "Base FEM mesh is empty";
+            return false;
+        }
+    }
+
     if (refined_mesh.nodes.empty() || refined_mesh.elems.empty()) {
-        LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: base FEM mesh is empty.");
-        out.error_message = "Base FEM mesh is empty";
+        LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: refined FEM mesh is empty.");
+        out.error_message = "Refined FEM mesh is empty";
         return false;
     }
 
     // Same refinement guard as FEMReferenceProvider.
-    const std::size_t base_dofs = refined_mesh.nodes.size();
+    const std::size_t current_dofs = refined_mesh.nodes.size();
     constexpr std::size_t kMaxRefDofs = 200000;
-    {
-        std::size_t est = base_dofs;
+    if (current_dofs > kMaxRefDofs) {
+        out.error_message =
+            "Reference mesh exceeds safety DOF cap before solve. Reduce levels or use a different study strategy.";
+        LOGT_ERROR(LogMath,
+                   "FEMReferenceProviderExactDirichlet: %s dofs=%zu ref_level=%d strategy=%s",
+                   out.error_message.c_str(),
+                   current_dofs,
+                   req.refinement_level,
+                   req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                       ? "triangulation"
+                       : "fem");
+        return false;
+    }
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformFemSubdivision) {
+        std::size_t est = current_dofs;
         for (int k = 0; k < req.refinement_level; ++k) {
             if (est > kMaxRefDofs / 4) {
                 est = kMaxRefDofs + 1;
@@ -218,18 +318,20 @@ bool FEMReferenceProviderExactDirichlet::solve_reference(
                 "Requested refinement level would create an excessively large reference mesh (uniform refinement). "
                 "Reduce levels or use a different study strategy.";
             LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: %s base_dofs=%zu ref_level=%d",
-                       out.error_message.c_str(), base_dofs, req.refinement_level);
+                       out.error_message.c_str(), current_dofs, req.refinement_level);
             return false;
         }
     }
 
-    for (int k = 0; k < req.refinement_level; ++k) {
-        refined_mesh = refine_fem_mesh_uniform_(refined_mesh);
-        if (refined_mesh.nodes.size() > kMaxRefDofs) {
-            out.error_message = "Reference mesh exceeded safety DOF cap during refinement.";
-            LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: %s dofs=%zu ref_level=%d",
-                       out.error_message.c_str(), refined_mesh.nodes.size(), req.refinement_level);
-            return false;
+    if (req.refinement_strategy == ReferenceRefinementStrategy::UniformFemSubdivision) {
+        for (int k = 0; k < req.refinement_level; ++k) {
+            refined_mesh = refine_fem_mesh_uniform_(refined_mesh);
+            if (refined_mesh.nodes.size() > kMaxRefDofs) {
+                out.error_message = "Reference mesh exceeded safety DOF cap during refinement.";
+                LOGT_ERROR(LogMath, "FEMReferenceProviderExactDirichlet: %s dofs=%zu ref_level=%d",
+                           out.error_message.c_str(), refined_mesh.nodes.size(), req.refinement_level);
+                return false;
+            }
         }
     }
 
@@ -252,108 +354,227 @@ bool FEMReferenceProviderExactDirichlet::solve_reference(
     out.sol = std::move(ref_sol);
     out.sys = std::move(sys);
     out.has_sys = true;
+    LOGT_INFO(LogMath,
+              "FEMReferenceProviderExactDirichlet: built reference with refinement level %d (strategy=%s)",
+              req.refinement_level,
+              req.refinement_strategy == ReferenceRefinementStrategy::UniformTriangulationSubdivision
+                  ? "triangulation"
+                  : "fem");
     return true;
 }
 
 DelaunayTriangulationResult refine_delaunay_uniform(
     const DelaunayTriangulationResult& input)
 {
-    
     if (input.triangles.empty() || input.points.empty()) {
         return input;
     }
 
     DelaunayTriangulationResult refined;
-    
-    const size_t num_edges = input.edges.size();
-    refined.points.reserve(input.points.size() + num_edges);
-    
     refined.points = input.points;
-    
-    std::unordered_map<int, int> edge_to_midpoint_idx;
-    
-    for (size_t e_id = 0; e_id < input.edges.size(); ++e_id) {
-        const EdgeInfo& edge_info = input.edges[e_id];
-        Point2D p0 = input.points[edge_info.a];
-        Point2D p1 = input.points[edge_info.b];
-        
+    refined.points.reserve(input.points.size() + input.triangles.size() * 3);
+
+    std::unordered_map<std::uint64_t, int> edge_to_midpoint_idx;
+    edge_to_midpoint_idx.reserve(input.triangles.size() * 3);
+
+    std::unordered_map<std::uint64_t, EdgeInfo> input_boundary_info;
+    input_boundary_info.reserve(input.edges.size() + input.boundary_edges.size());
+    std::unordered_map<std::uint64_t, EdgeInfo> refined_boundary_info;
+    refined_boundary_info.reserve(input.edges.size() * 2 + input.boundary_edges.size() * 2);
+    for (const auto& edge_info : input.edges) {
+        if (!edge_info.on_boundary) continue;
+        input_boundary_info.emplace(pack_edge_key(edge_info.a, edge_info.b), edge_info);
+    }
+    for (const auto& edge : input.boundary_edges) {
+        const std::uint64_t key = pack_edge_key(edge.a, edge.b);
+        if (input_boundary_info.find(key) == input_boundary_info.end()) {
+            EdgeInfo edge_info{};
+            edge_info.a = std::min(edge.a, edge.b);
+            edge_info.b = std::max(edge.a, edge.b);
+            edge_info.on_boundary = true;
+            input_boundary_info.emplace(key, edge_info);
+        }
+    }
+
+    auto midpoint_index = [&](int a, int b) -> int {
+        const std::uint64_t key = pack_edge_key(a, b);
+        auto it = edge_to_midpoint_idx.find(key);
+        if (it != edge_to_midpoint_idx.end()) {
+            return it->second;
+        }
+
+        if (a < 0 || b < 0 || static_cast<std::size_t>(a) >= input.points.size() ||
+            static_cast<std::size_t>(b) >= input.points.size()) {
+            return -1;
+        }
+
+        const Point2D& p0 = input.points[static_cast<std::size_t>(a)];
+        const Point2D& p1 = input.points[static_cast<std::size_t>(b)];
+
         Point2D midpoint;
         midpoint.p.x = 0.5 * (p0.x() + p1.x());
         midpoint.p.y = 0.5 * (p0.y() + p1.y());
-        
-        edge_to_midpoint_idx[static_cast<int>(e_id)] = 
-            static_cast<int>(refined.points.size());
+        midpoint.id = static_cast<int>(refined.points.size());
+
+        const auto bit = input_boundary_info.find(key);
+        midpoint.on_boundary = (bit != input_boundary_info.end());
+
+        const int idx = midpoint.id;
         refined.points.push_back(midpoint);
-    }
-    
+        edge_to_midpoint_idx.emplace(key, idx);
+
+        if (bit != input_boundary_info.end()) {
+            EdgeInfo child0 = bit->second;
+            child0.a = std::min(a, idx);
+            child0.b = std::max(a, idx);
+            child0.on_boundary = true;
+            child0.tri_left = -1;
+            child0.tri_right = -1;
+            refined_boundary_info[pack_edge_key(child0.a, child0.b)] = child0;
+
+            EdgeInfo child1 = bit->second;
+            child1.a = std::min(idx, b);
+            child1.b = std::max(idx, b);
+            child1.on_boundary = true;
+            child1.tri_left = -1;
+            child1.tri_right = -1;
+            refined_boundary_info[pack_edge_key(child1.a, child1.b)] = child1;
+        }
+
+        return idx;
+    };
+
     refined.triangles.reserve(4 * input.triangles.size());
-    refined.tri2vert.reserve(4 * input.tri2vert.size());
-    
-    for (size_t t = 0; t < input.triangles.size(); ++t) {
-        const auto& tri = input.triangles[t];
-        const auto& tri_edges = input.tri2edge[t];
-        
-        int v0 = input.tri2vert[t].x;
-        int v1 = input.tri2vert[t].y;
-        int v2 = input.tri2vert[t].z;
-        
-        // Edge 0: (v0, v1)
-        // Edge 1: (v1, v2)
-        // Edge 2: (v2, v0)
-        auto it01 = edge_to_midpoint_idx.find(tri_edges.x);
-        auto it12 = edge_to_midpoint_idx.find(tri_edges.y);
-        auto it20 = edge_to_midpoint_idx.find(tri_edges.z);
-        
-        if (it01 == edge_to_midpoint_idx.end() || 
-            it12 == edge_to_midpoint_idx.end() || 
-            it20 == edge_to_midpoint_idx.end()) {
-            LOGT_ERROR(LogMath, "refine_delaunay_uniform: edge index not found in midpoint map");
+    refined.tri2vert.reserve(4 * input.triangles.size());
+
+    auto append_tri = [&](int a, int b, int c) {
+        Tri child(a, b, c, static_cast<int>(refined.triangles.size()));
+        child.valid = true;
+        refined.triangles.push_back(child);
+        refined.tri2vert.push_back(child.v);
+    };
+
+    for (const auto& tri : input.triangles) {
+        if (!tri.valid) continue;
+
+        const int v0 = tri.v.x;
+        const int v1 = tri.v.y;
+        const int v2 = tri.v.z;
+
+        const int m01 = midpoint_index(v0, v1);
+        const int m12 = midpoint_index(v1, v2);
+        const int m20 = midpoint_index(v2, v0);
+
+        if (m01 < 0 || m12 < 0 || m20 < 0) {
+            LOGT_ERROR(LogMath, "refine_delaunay_uniform: failed to create midpoint for triangle %d", tri.id);
             continue;
         }
-        
-        int m01 = it01->second;
-        int m12 = it12->second;
-        int m20 = it20->second;
-        
-        refined.triangles.push_back(tri);
-        refined.tri2vert.push_back({v0, m01, m20});
-        
-        refined.triangles.push_back(tri);
-        refined.tri2vert.push_back({m01, v1, m12});
-        
-        refined.triangles.push_back(tri);
-        refined.tri2vert.push_back({m20, m12, v2});
-        
-        refined.triangles.push_back(tri);
-        refined.tri2vert.push_back({m01, m12, m20});
+
+        append_tri(v0, m01, m20);
+        append_tri(m01, v1, m12);
+        append_tri(m20, m12, v2);
+        append_tri(m01, m12, m20);
     }
-    
-    for (const Edge& edge : input.boundary_edges) {
-        for (size_t e_id = 0; e_id < input.edges.size(); ++e_id) {
-            const EdgeInfo& edge_info = input.edges[e_id];
-            if ((edge_info.a == edge.a && edge_info.b == edge.b) ||
-                (edge_info.a == edge.b && edge_info.b == edge.a)) {
-                
-                int m_idx = edge_to_midpoint_idx[static_cast<int>(e_id)];
-                
-                // Two refined boundary edges
-                refined.boundary_edges.push_back({edge.a, m_idx});
-                refined.boundary_edges.push_back({m_idx, edge.b});
-                break;
+
+    struct AccEdge {
+        int a = -1;
+        int b = -1;
+        int tri_left = -1;
+        int tri_right = -1;
+    };
+
+    refined.tri2edge.assign(refined.triangles.size(), {-1, -1, -1});
+    refined.tri_neighbors.assign(refined.triangles.size(), {-1, -1, -1});
+    refined.vert2tri.assign(refined.points.size(), {});
+
+    std::unordered_map<std::uint64_t, int> edge_index;
+    edge_index.reserve(refined.triangles.size() * 3);
+    std::vector<AccEdge> acc_edges;
+    acc_edges.reserve(refined.triangles.size() * 3);
+
+    auto add_edge = [&](int a, int b, int tri_idx) -> int {
+        const std::uint64_t key = pack_edge_key(a, b);
+        auto [it, inserted] = edge_index.emplace(key, static_cast<int>(acc_edges.size()));
+        if (inserted) {
+            AccEdge edge;
+            edge.a = std::min(a, b);
+            edge.b = std::max(a, b);
+            edge.tri_left = tri_idx;
+            acc_edges.push_back(edge);
+            return it->second;
+        }
+
+        AccEdge& edge = acc_edges[static_cast<std::size_t>(it->second)];
+        if (edge.tri_left == -1) edge.tri_left = tri_idx;
+        else edge.tri_right = tri_idx;
+        return it->second;
+    };
+
+    for (std::size_t i = 0; i < refined.triangles.size(); ++i) {
+        const Tri& tri = refined.triangles[i];
+        const int e0 = add_edge(tri.v.x, tri.v.y, static_cast<int>(i));
+        const int e1 = add_edge(tri.v.y, tri.v.z, static_cast<int>(i));
+        const int e2 = add_edge(tri.v.z, tri.v.x, static_cast<int>(i));
+        refined.tri2edge[i] = {e0, e1, e2};
+
+        refined.vert2tri[static_cast<std::size_t>(tri.v.x)].push_back(static_cast<int>(i));
+        refined.vert2tri[static_cast<std::size_t>(tri.v.y)].push_back(static_cast<int>(i));
+        refined.vert2tri[static_cast<std::size_t>(tri.v.z)].push_back(static_cast<int>(i));
+    }
+
+    refined.edges.reserve(acc_edges.size());
+    for (const auto& acc_edge : acc_edges) {
+        EdgeInfo edge_info{};
+        edge_info.a = acc_edge.a;
+        edge_info.b = acc_edge.b;
+        edge_info.tri_left = acc_edge.tri_left;
+        edge_info.tri_right = acc_edge.tri_right;
+        edge_info.on_boundary = (acc_edge.tri_right == -1);
+
+        const auto child_bit = refined_boundary_info.find(pack_edge_key(acc_edge.a, acc_edge.b));
+        if (child_bit != refined_boundary_info.end()) {
+            edge_info.boundary_tag = child_bit->second.boundary_tag;
+            edge_info.bc = child_bit->second.bc;
+        } else {
+            const auto bit = input_boundary_info.find(pack_edge_key(acc_edge.a, acc_edge.b));
+            if (bit != input_boundary_info.end()) {
+                edge_info.boundary_tag = bit->second.boundary_tag;
+                edge_info.bc = bit->second.bc;
+            }
+        }
+
+        refined.edges.push_back(edge_info);
+        if (edge_info.on_boundary) {
+            refined.boundary_edges.push_back({edge_info.a, edge_info.b});
+            if (static_cast<std::size_t>(edge_info.a) < refined.points.size()) {
+                refined.points[static_cast<std::size_t>(edge_info.a)].on_boundary = true;
+            }
+            if (static_cast<std::size_t>(edge_info.b) < refined.points.size()) {
+                refined.points[static_cast<std::size_t>(edge_info.b)].on_boundary = true;
             }
         }
     }
-    
+
+    for (std::size_t i = 0; i < refined.triangles.size(); ++i) {
+        const glm::ivec3 tri_edges = refined.tri2edge[i];
+        glm::ivec3 neighbors{-1, -1, -1};
+        for (int k = 0; k < 3; ++k) {
+            const int edge_idx = tri_edges[k];
+            if (edge_idx < 0 || static_cast<std::size_t>(edge_idx) >= refined.edges.size()) continue;
+            const EdgeInfo& edge_info = refined.edges[static_cast<std::size_t>(edge_idx)];
+            neighbors[k] = (edge_info.tri_left == static_cast<int>(i)) ? edge_info.tri_right : edge_info.tri_left;
+        }
+        refined.triangles[i].neighbors = neighbors;
+        refined.tri_neighbors[i] = neighbors;
+    }
+
     refined.point_count = static_cast<int>(refined.points.size());
     refined.triangle_count = static_cast<int>(refined.triangles.size());
-    
+
     refined.min_angle = input.min_angle;
     refined.median_angle = input.median_angle;
     refined.avg_angle = input.avg_angle;
-    
-    // Note: Adjacency structures (vert2tri, tri_neighbors) are not populated here.
-    // They will be recomputed by the mesh building process if needed.
-    
+
     return refined;
 }
 

@@ -50,6 +50,8 @@ public:
     void remap_after_retriangulation();
     void capture_geometry_from_edges();
     void capture_geometry_from_edges(const DelaunayTriangulationResult& R);
+    bool capture_parameterization_from_edges();
+    bool capture_parameterization_from_edges(const DelaunayTriangulationResult& R);
 
     bool is_selected_ = false;
 
@@ -86,6 +88,12 @@ public:
     static std::vector<int>
         find_boundary_path_edge_ids(const DelaunayTriangulationResult& R, int v0, int v1);
 
+    static bool order_boundary_chain(const DelaunayTriangulationResult& R,
+                                     const std::vector<int>& edge_ids,
+                                     std::vector<int>& ordered_edge_ids,
+                                     std::vector<int>& ordered_vertices,
+                                     bool& is_closed);
+
 
 protected:
     double value_ = 0.0;
@@ -99,11 +107,15 @@ protected:
     int start_point_ = s_invalid;
     int end_point_ = s_invalid;
 
-    int loop_index_ = s_invalid;
-    double start_s_ = 0.0;
-    double end_s_ = 0.0;
+    // Transient remap data: captured before retriangulation, consumed during remap.
+    struct SegmentEndpoints {
+        glm::dvec2 start_world{};
+        glm::dvec2 end_world{};
+        BoundaryConditionPathMode mode = BoundaryConditionPathMode::Shorter;
+    };
+    std::vector<SegmentEndpoints> remap_segments_;
     bool has_param_ = false;
-    
+
     std::vector<glm::dvec2> arc_positions_;
     bool has_geometry_ = false;
 

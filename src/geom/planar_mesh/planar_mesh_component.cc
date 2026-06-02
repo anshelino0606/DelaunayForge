@@ -514,6 +514,7 @@ void PlanarMeshComponent::update_triangulation(const DelaunayTriangulationResult
     for (BoundaryCondition* bc : boundary_conditions_) {
         if (!bc) continue;
         bc->capture_geometry_from_edges(triangulation_result_);
+        bc->capture_parameterization_from_edges(triangulation_result_);
     }
 
     triangulation_result_ = new_result;
@@ -604,11 +605,20 @@ void PlanarMeshComponent::update_buffers() {
     }
 
     uint64_t new_vertex_buffer_size = sizeof(glm::vec3) * triangulation_result_.points.size();
-    
-    if (!vertex_buffer_ || vertex_buffer_->GetDesc().size < new_vertex_buffer_size) {
+    uint64_t new_index_buffer_size = sizeof(uint32_t) * triangulation_result_.triangles.size() * 3;
+
+    const bool needs_vertex_buffer = !vertex_buffer_ || vertex_buffer_->GetDesc().size < new_vertex_buffer_size;
+    const bool needs_index_buffer = !index_buffer_ || index_buffer_->GetDesc().size < new_index_buffer_size;
+
+    if (needs_vertex_buffer || needs_index_buffer) {
         if (vertex_buffer_) {
             g_device->Release(*vertex_buffer_);
+            vertex_buffer_ = nullptr;
+        }
+
+        if (index_buffer_) {
             g_device->Release(*index_buffer_);
+            index_buffer_ = nullptr;
         }
 
         LLGL::VertexFormat vertex_format;
@@ -625,7 +635,7 @@ void PlanarMeshComponent::update_buffers() {
         vertex_buffer_ = g_device->CreateBuffer(vertex_buffer_desc);
 
         LLGL::BufferDescriptor index_buffer_desc;
-        index_buffer_desc.size = sizeof(uint32_t) * triangulation_result_.triangles.size() * 3;
+        index_buffer_desc.size = new_index_buffer_size;
         index_buffer_desc.bindFlags = LLGL::BindFlags::IndexBuffer;
         index_buffer_desc.cpuAccessFlags = LLGL::CPUAccessFlags::Write;
         index_buffer_desc.format = LLGL::Format::R32UInt;

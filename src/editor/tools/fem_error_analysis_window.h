@@ -15,13 +15,13 @@
 #include "math/fem/field/fem_reference_provider.h"
 #include "math/fem/field/fem_convergence_study.h"
 #include "math/fractional_equation_config.h"
+#include "geom/delaunay_types.h"
 
 namespace fem {
 
 class IReferenceProvider;
 class PlanarMeshComponent;
 class PDEComponent;
-struct DelaunayTriangulationResult;
 
 class FEMErrorAnalysisWindow final {
 public:
@@ -83,6 +83,7 @@ private:
         double linf = 0.0;
         double l2 = 0.0;
         double h1_semi = 0.0;
+        double h1_full = 0.0;
         int dofs = 0;
         
         FEMMesh mesh;
@@ -96,6 +97,7 @@ private:
         int min_level = 0;
         int max_level = 3;
         int ref_level = 4;
+        int preview_level = 0;
 
         int sample_points = 64;
         unsigned int seed = 1;
@@ -104,6 +106,10 @@ private:
     } stress_cfg_;
 
     std::string stress_status_message_;
+    const PlanarMeshComponent* aitken_preview_mesh_ = nullptr;
+    DelaunayTriangulationResult aitken_preview_base_triangulation_;
+    bool aitken_preview_has_base_ = false;
+    int aitken_preview_level_applied_ = -1;
     
     std::string export_path_ = "fem_error_analysis";
     bool show_export_dialog_ = false;
