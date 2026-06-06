@@ -21,26 +21,6 @@ function(fem_collect_sources out_sources out_opengl_backend)
     ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_glfw.h
   )
 
-  if(WIN32)
-    file(GLOB imgui_backend CONFIGURE_DEPENDS
-      ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_dx12.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_dx12.h
-    )
-  elseif(APPLE)
-    file(GLOB imgui_backend CONFIGURE_DEPENDS
-      ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_metal.mm
-      ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_metal.h
-    )
-  else()
-    set(imgui_backend)
-  endif()
-
-  file(GLOB imgui_opengl_backend CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_opengl3.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_opengl3.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/glad/*.c
-  )
-
   file(GLOB lz4_sources CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/lz4/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/include/lz4/*.h

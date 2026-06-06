@@ -35,6 +35,16 @@
       }
     },
     {
+      "name": "debug-llgl",
+      "inherits": "base",
+      "displayName": "Debug (LLGL)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "USE_BGFX": "OFF",
+        "USE_LLGL": "ON"
+      }
+    },
+    {
       "name": "debug-opengl",
       "inherits": "base",
       "displayName": "Debug (OpenGL fallback)",
@@ -53,6 +63,10 @@
     {
       "name": "release-llgl",
       "configurePreset": "release-llgl"
+    },
+    {
+      "name": "debug-llgl",
+      "configurePreset": "debug-llgl"
     },
     {
       "name": "debug-opengl",

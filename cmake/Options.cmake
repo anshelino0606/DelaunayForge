@@ -14,13 +14,23 @@ if(USE_LLGL AND USE_BGFX)
   set(USE_BGFX OFF CACHE BOOL "Render with bgfx instead of raw OpenGL" FORCE)
 endif()
 
+if(MSVC)
+  add_compile_options(
+    /MP # Multi-processor compilation
+    $<$<CONFIG:Release>:/O2>
+    $<$<CONFIG:Release>:/fp:fast>
+    $<$<CONFIG:Release>:/DNDEBUG>
+  )
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(
-    "$<$<CONFIG:Release>:-O3>"
-    "$<$<CONFIG:Release>:-march=native>"
-    "$<$<CONFIG:Release>:-ffast-math>"
-    "$<$<CONFIG:Release>:-DNDEBUG>"
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Release>:-march=native>
+    $<$<CONFIG:Release>:-ffast-math>
+    $<$<CONFIG:Release>:-DNDEBUG>
   )
+  set(CMAKE_BUILD_PARALLEL_LEVEL 8)
 endif()
 
 function(fem_configure_target target)

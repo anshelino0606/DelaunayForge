@@ -2,6 +2,7 @@
 #define FEM_SOLVER_CG
 
 #include "fem_mesh.h"
+#include "core/macro.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -10,8 +11,8 @@
 namespace fem {
 
 inline void crs_matvec(const CRS& A,
-                       const double* __restrict__ x,
-                       double* __restrict__ y,
+                       const double* FEM_RESTRICT x,
+                       double* FEM_RESTRICT y,
                        int n) noexcept {
     for (int i = 0; i < n; ++i) {
         double s = 0.0;

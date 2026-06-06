@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.27)
-project(DelaunayForge LANGUAGES C CXX OBJC OBJCXX)
+
+if(WIN32)
+  project(DelaunayForge LANGUAGES C CXX)
+elseif(APPLE)
+  project(DelaunayForge LANGUAGES C CXX OBJC OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,13 +33,11 @@ if(USE_LLGL)
       glm
       LLGL
       LLGL_Null
-      LLGL_OpenGL
   )
 
   if(WIN32)
     target_link_libraries(DelaunayForge
       PRIVATE
-        LLGL_Direct3D11
         LLGL_Direct3D12
     )
   elseif(APPLE)
