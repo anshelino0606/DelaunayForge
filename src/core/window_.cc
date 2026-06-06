@@ -19,10 +19,6 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
-#if defined(USE_BGFX)
-#include <bgfx/bgfx.h>
-#endif 
-
 namespace fem {
 
 bool Window::init(const WindowInitInfo& init_info) {
@@ -31,17 +27,8 @@ bool Window::init(const WindowInitInfo& init_info) {
         return false; 
     }
 
-#if !defined(USE_BGFX) && !defined(USE_LLGL)
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT,GL_TRUE);
-#else
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#endif
-
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GL_TRUE);
-
     glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
     LOGT_DEBUG(LogApplication, "glfwCreateWindow()");
@@ -61,19 +48,6 @@ bool Window::init(const WindowInitInfo& init_info) {
     }
 
     glfwSetWindowUserPointer(window_, this);
-
-#if !defined(USE_BGFX) && !defined(USE_LLGL)
-    glfwMakeContextCurrent(window_);
-    glfwSetFramebufferSizeCallback(window_, [](GLFWwindow*,int w,int h){ glViewport(0,0,w,h); });
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        LOGT_WARN(LogApplication, "Failed to initialize GLAD\n"); return false;
-    }
-    glfwSwapInterval(1);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-#endif
-
     glfwSetKeyCallback(window_, Keyboard::keyCallback);
     glfwSetCursorPosCallback(window_, Mouse::cursorPosCallback);
     glfwSetMouseButtonCallback(window_, Mouse::mouseButtonCallback);
@@ -82,36 +56,10 @@ bool Window::init(const WindowInitInfo& init_info) {
     return true;
 }
 
-#if defined(USE_BGFX)
-void Window::fill_platform_data(bgfx::PlatformData& out_data) const {
-#if defined(_WIN32)
-    out_data.nwh = glfwGetWin32Window(window_);
-    out_data.ndt = nullptr;
-#elif defined(__APPLE__)
-    out_data.nwh = glfwGetCocoaWindow(window_);
-    out_data.ndt = nullptr;
-#elif defined(GLFW_EXPOSE_NATIVE_WAYLAND)
-    out_data.nwh = (void*)glfwGetWaylandWindow(window_);
-    out_data.ndt = glfwGetWaylandDisplay();
-#else
-    out_data.nwh = (void*)(uintptr_t)glfwGetX11Window(window_);
-    out_data.ndt = glfwGetX11Display();
-#endif
-    out_data.context      = nullptr;
-    out_data.backBuffer   = nullptr;
-    out_data.backBufferDS = nullptr;
-}
-#endif
-
 void Window::shutdown() {
     if (window_) {
-#ifndef USE_BGFX
         glfwDestroyWindow(window_);
         glfwTerminate();
-#else
-        glfwDestroyWindow(window_);
-        glfwTerminate();
-#endif
     }
 }
 

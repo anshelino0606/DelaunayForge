@@ -4,11 +4,7 @@
 #include <vector>
 #include "geom/delaunay2d.h"
 
-#ifdef USE_BGFX
 #include "delaunay_gpu.h"
-#include "delaunay_compute.h"
-#endif // USE_BGFX
-
 
 namespace fem {
 
@@ -41,8 +37,6 @@ public:
     const char* name() const noexcept override { return "CPU Delaunay"; }
 };
 
-// omg idk but w/o this it breaks the macos gcc, we should do smth maybe
-#ifdef USE_BGFX
 class GPUDelaunayBackend final : public ITriangulationBackend {
 public:
     explicit GPUDelaunayBackend(const char* shader_dir = nullptr,
@@ -59,7 +53,6 @@ public:
 private:
     std::unique_ptr<GPUDelaunayTriangulator> gpu_;
 };
-#endif // USE_BGFX
 
 }
 

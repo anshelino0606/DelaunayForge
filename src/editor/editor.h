@@ -27,12 +27,10 @@ enum class TriBackend { CPU, GPU };
 class Window;
 class Entity;class Camera;
 class Renderer;
-using MeshUpdateCallback = std::function<void()>;
 using DrawDebugInfoCallback = std::function<void()>;
 
 struct EditorInitInfo {
     Window* window = nullptr;
-    MeshUpdateCallback mesh_update_callback;
     DrawDebugInfoCallback draw_debug_info_callback;
 };
 

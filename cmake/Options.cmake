@@ -6,14 +6,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(USE_BGFX "Render with bgfx instead of raw OpenGL" ON)
-option(USE_LLGL "Render with LLGL instead of bgfx" OFF)
-
-if(USE_LLGL AND USE_BGFX)
-  message(STATUS "USE_LLGL=ON forcing USE_BGFX=OFF")
-  set(USE_BGFX OFF CACHE BOOL "Render with bgfx instead of raw OpenGL" FORCE)
-endif()
-
 if(MSVC)
   add_compile_options(
     /MP # Multi-processor compilation

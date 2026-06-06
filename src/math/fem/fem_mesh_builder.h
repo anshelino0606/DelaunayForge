@@ -1,7 +1,6 @@
 #ifndef FEM_MESH_BUILDER
 #define FEM_MESH_BUILDER
 
-#include "delaunay_compute.h"
 #include "fem_mesh.h"
 
 #include "delaunay_types.h"

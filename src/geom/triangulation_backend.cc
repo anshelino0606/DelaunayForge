@@ -1,14 +1,9 @@
 #include "triangulation_backend.h"
 #include "geom/delaunay2d.h"
-#ifdef USE_BGFX
-#include "delaunay_compute.h"
-#endif
-
-
-// CPU BACKEND
 
 namespace fem {
 
+// CPU BACKEND
 DelaunayTriangulationResult CPUDelaunayBackend::triangulate(
     const TriangulationRequest& req)
 {
@@ -47,12 +42,11 @@ DelaunayTriangulationResult CPUDelaunayBackend::triangulate(
 }
 
 // GPU BACKEND
-#ifdef USE_BGFX
 GPUDelaunayBackend::GPUDelaunayBackend(
     const char* shader_dir,
     GPUDelaunayTriangulator::Mode mode)
 {
-    gpu_ = create_delaunay_triangulator(shader_dir, mode);
+    gpu_ = create_delaunay_triangulator(mode);
 }
 
 DelaunayTriangulationResult GPUDelaunayBackend::triangulate(
@@ -110,6 +104,4 @@ DelaunayTriangulationResult GPUDelaunayBackend::triangulate(
 
     return gpu_->triangulate_full_gpu(*gpu_points, cfg);
 }
-
-#endif // USE_BGFX
 }

@@ -7,19 +7,9 @@
 
 #include <imgui/imgui.h>
 
-#if defined(USE_LLGL)
-    #include "imgui_renderer.h"
-#endif
-
-#if defined(USE_LLGL)
-    #include "surface.h"
-    #include <LLGL/LLGL.h>
-#endif
-
-#if defined(USE_BGFX)
-#include "mesh_bgfx_adapter.h"
-#include "rhi/graphics_program.h"
-#endif
+#include "imgui_renderer.h"
+#include "surface.h"
+#include <LLGL/LLGL.h>
 
 struct ImDrawData;
 
@@ -50,24 +40,14 @@ public:
     void draw(const RendererDrawInfo& draw_info);
     void draw_debug_info() const;
 
-    void update_mesh(std::shared_ptr<DelaunayMeshGenerator> mesh_generator);
-
     ImTextureID get_viewport_texture_id() const;
 
 private:
     bool is_initialized_ = false;
     Window* window_ = nullptr;
 
-#if defined(USE_LLGL)
     std::unique_ptr<ImGuiRenderer> imgui_renderer_;
-#endif
 
-#if defined(USE_BGFX)
-    GraphicsProgram mesh_program_;
-    std::unique_ptr<MeshBgfxAdapter> mesh_;
-#endif
-
-#if defined(USE_LLGL)
     LLGL::RenderingDebugger debugger_;
 
     std::shared_ptr<Surface> surface_ = nullptr;
@@ -100,9 +80,6 @@ private:
     void create_grid_pipeline();
     void create_dummy_textures();
     void create_samplers();
-#else
-    ImTextureID viewport_imgui_descriptor_ = 0;
-#endif
 };
 
 }

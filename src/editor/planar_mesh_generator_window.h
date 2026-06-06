@@ -53,10 +53,6 @@ private:
     PlanarTriangulationSessionConfig triangulation_session_config_;\
     ParametricCurveTool parametric_tool_;
 
-    void create_random_points(size_t point_count, const PlanarMeshGeneratorWindowDrawInfo& draw_info);
-    void create_grid_points(size_t point_count_x, size_t point_count_y, const PlanarMeshGeneratorWindowDrawInfo& draw_info);
-    
-    void rebuild_density_now_if_enabled(const PlanarMeshGeneratorWindowDrawInfo& draw_info);
     std::vector<Point2D> compute_convex_hull(std::vector<Point2D> pts);
 
     void send_triangulation_request(const PlanarMeshGeneratorWindowDrawInfo& draw_info);
