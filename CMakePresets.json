@@ -71,6 +71,11 @@
       "configuration": "RelWithDebInfo"
     },
     {
+      "name": "vs2022-minSizeRel",
+      "configurePreset": "vs2022",
+      "configuration": "MinSizeRel"
+    },
+    {
       "name": "vs2026-debug",
       "configurePreset": "vs2026",
       "configuration": "Debug"
@@ -84,6 +89,11 @@
       "name": "vs2026-releaseWithDebugInfo",
       "configurePreset": "vs2026",
       "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "vs2026-minSizeRel",
+      "configurePreset": "vs2026",
+      "configuration": "MinSizeRel"
     }
   ]
 }
