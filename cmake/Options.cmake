@@ -54,7 +54,7 @@ function(fem_configure_apple_target target)
 endfunction()
 
 function(fem_disable_debug_sanitizers_for_third_party)
-  foreach(tgt IN ITEMS shaderc spirv-cross spirv-opt bimg bx bgfx)
+  foreach(tgt IN ITEMS shaderc spirv-cross spirv-opt)
     if(TARGET ${tgt})
       target_compile_options(${tgt} PRIVATE $<$<CONFIG:Debug>:-fno-sanitize=all>)
       target_link_options(${tgt} PRIVATE $<$<CONFIG:Debug>:-fno-sanitize=all>)
