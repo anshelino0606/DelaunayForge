@@ -1,4 +1,5 @@
 #include "imgui_renderer.h"
+#include "shader_lib/shader_manager.h"
 #include "log_categories.h"
 #include "core/file_system/file_system.h"
 #include "renderer/device.h"
@@ -34,6 +35,13 @@ bool ImGuiRenderer::init(const ImGuiRendererInitInfo& init_info) {
         return false;
     }
 
+    if (!init_info.shader_manager) {
+        LOGT_ERROR(LogRenderer, "ImGuiRenderer::init(): shader_manager is null");
+        return false;
+    }
+
+    shader_manager_ = init_info.shader_manager;
+
     if constexpr (sizeof(ImDrawIdx) == 2) {
         index_format_ = LLGL::Format::R16UInt;
     } else {
@@ -55,8 +63,6 @@ void ImGuiRenderer::shutdown() {
     g_device->Release(*pipeline_);
     g_device->Release(*pipeline_layout_);
     g_device->Release(*font_texture_);
-    g_device->Release(*vertex_shader_);
-    g_device->Release(*pixel_shader_);
     g_device->Release(*vs_constant_buffer_);
     
     for (LLGL::Buffer* buffer : vertex_buffers_) {
@@ -246,11 +252,10 @@ void ImGuiRenderer::update_descriptor(uint64_t descriptor_idx, const std::vector
 }
 
 void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
-    constexpr std::string_view vertex_shader_path = "imgui_vs";
-    constexpr std::string_view pixel_shader_path = "imgui_ps";
+    constexpr const char* shader_path = "imgui";
 
-    vertex_shader_ = load_shader(vertex_shader_path, LLGL::ShaderType::Vertex);
-    pixel_shader_ = load_shader(pixel_shader_path, LLGL::ShaderType::Fragment);
+    vertex_shader_ = shader_manager_->get_vertex_shader<VERTEX_LAYOUT_IMGUI>({shader_path});
+    pixel_shader_ = shader_manager_->get_pixel_shader({shader_path});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.bindings = {
@@ -268,8 +273,8 @@ void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
     LLGL::GraphicsPipelineDescriptor pipeline_desc {
         .pipelineLayout = pipeline_layout_,
         .renderPass = const_cast<LLGL::RenderPass*>(render_pass),
-        .vertexShader = vertex_shader_,
-        .fragmentShader = pixel_shader_,
+        .vertexShader = vertex_shader_->handle(),
+        .fragmentShader = pixel_shader_->handle(),
         .indexFormat = index_format_,
         .primitiveTopology = LLGL::PrimitiveTopology::TriangleList,
         .depth = {

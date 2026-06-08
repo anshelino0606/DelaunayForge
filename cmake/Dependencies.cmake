@@ -49,3 +49,10 @@ FetchContent_Declare(
   GIT_TAG 1.0.2
 )
 FetchContent_MakeAvailable(glm)
+
+FetchContent_Declare(
+  slang
+  GIT_REPOSITORY https://github.com/shader-slang/slang
+  GIT_TAGE v2026.10.2
+)
+FetchContent_MakeAvailable(slang)

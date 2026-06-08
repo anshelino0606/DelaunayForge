@@ -88,10 +88,12 @@ bool Renderer::init(const RendererInitInfo& init_info) {
     create_dummy_textures();
     create_samplers();
 
+    shader_manager_ = std::make_unique<ShaderManager>();
     imgui_renderer_ = std::make_unique<ImGuiRenderer>();
 
     imgui_renderer_->init({
         .swap_chain = swap_chain_,
+        .shader_manager = shader_manager_.get()
     });
 
     {
@@ -137,13 +139,13 @@ bool Renderer::init(const RendererInitInfo& init_info) {
 }
 
 void Renderer::shutdown() {
+    shader_manager_.reset();
+
     g_device->Release(*swap_chain_);
     g_device->Release(*main_cmd_);
     g_device->Release(*viewport_color_texture_);
     g_device->Release(*viewport_depth_texture_);
     g_device->Release(*viewport_render_target_);
-    g_device->Release(*object_vs_);
-    g_device->Release(*object_ps_);
     g_device->Release(*object_pipeline_);
     g_device->Release(*object_pipeline_layout_);
     g_device->Release(*object_resource_heap_);
@@ -156,7 +158,6 @@ void Renderer::shutdown() {
     if (grid_resource_heap_) g_device->Release(*grid_resource_heap_);
     if (grid_pipeline_layout_) g_device->Release(*grid_pipeline_layout_);
     if (grid_pipeline_) g_device->Release(*grid_pipeline_);
-    if (grid_ps_) g_device->Release(*grid_ps_);
 
     imgui_renderer_->shutdown();
 
@@ -472,11 +473,10 @@ LLGL::Shader* Renderer::load_shader(std::string_view shader_name, LLGL::ShaderTy
 }
 
 void Renderer::create_object_pipeline() {
-    constexpr std::string_view object_vs_path = "object_vs";
-    constexpr std::string_view object_fs_path = "object_ps";
+    constexpr const char* object_shader_path = "object";
 
-    object_vs_ = load_shader(object_vs_path, LLGL::ShaderType::Vertex);
-    object_ps_ = load_shader(object_fs_path, LLGL::ShaderType::Fragment);
+    object_vs_ = shader_manager_->get_vertex_shader({object_shader_path});
+    object_ps_ = shader_manager_->get_pixel_shader({object_shader_path});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -492,8 +492,8 @@ void Renderer::create_object_pipeline() {
     object_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = object_vs_;
-    pipeline_desc.fragmentShader = object_ps_;
+    pipeline_desc.vertexShader = object_vs_->handle();
+    pipeline_desc.fragmentShader = object_ps_->handle();
     pipeline_desc.pipelineLayout = object_pipeline_layout_;
     pipeline_desc.rasterizer.multiSampleEnabled = false;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::TriangleList;
@@ -536,9 +536,10 @@ void Renderer::create_object_pipeline() {
 }
 
 void Renderer::create_grid_pipeline() {
-    constexpr std::string_view grid_fs_path = "grid_ps";
+    constexpr const char* shader_path = "grid";
 
-    grid_ps_ = load_shader(grid_fs_path, LLGL::ShaderType::Fragment);
+    grid_vs_ = shader_manager_->get_vertex_shader({shader_path});
+    grid_ps_ = shader_manager_->get_pixel_shader({shader_path});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -553,8 +554,8 @@ void Renderer::create_grid_pipeline() {
     grid_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = object_vs_;
-    pipeline_desc.fragmentShader = grid_ps_;
+    pipeline_desc.vertexShader = grid_vs_->handle();
+    pipeline_desc.fragmentShader = grid_ps_->handle();
     pipeline_desc.pipelineLayout = grid_pipeline_layout_;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::LineList;
     pipeline_desc.renderPass = viewport_render_target_->GetRenderPass();

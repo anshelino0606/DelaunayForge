@@ -31,6 +31,7 @@ target_link_libraries(DelaunayForge
   PRIVATE
     glfw
     glm
+    slang
     LLGL
     LLGL_Null
 )

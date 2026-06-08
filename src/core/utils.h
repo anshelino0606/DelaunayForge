@@ -18,6 +18,8 @@ public:
         std::vector<uint8_t>& out_data,
         uint64_t compressed_data_offset = 0
     );
+
+    static void hash_combine(std::size_t& seed, std::size_t value);
 };
 
 }
