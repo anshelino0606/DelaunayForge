@@ -33,9 +33,6 @@ bool Application::init() {
 
     if (!editor_.init({
         .window = &window_,
-        .mesh_update_callback = [&]{
-            renderer_.update_mesh(editor_.session().mesh_generator());
-        },
         .draw_debug_info_callback = [&]() {
             renderer_.draw_debug_info();
         }

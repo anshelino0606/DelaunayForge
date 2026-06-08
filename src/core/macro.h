@@ -228,5 +228,13 @@
   #define FEM_FORCEINLINE inline __attribute__((always_inline))
 #endif
 
+#if defined(_MSC_VER)
+  #define FEM_RESTRICT __restrict
+#elif defined(__clang__) || defined(__GNUC__)
+  #define FEM_RESTRICT __restrict__
+#else
+  #define FEM_RESTRICT
+#endif
+
 
 #endif // FEM_CORE_MACRO_H

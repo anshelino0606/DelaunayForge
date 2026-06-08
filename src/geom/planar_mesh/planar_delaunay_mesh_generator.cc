@@ -29,7 +29,7 @@ void PlanarDelaunayMeshGenerator::switch_backend() {
         break;
     }
     case TriangulationBackendType::GPU: {
-#ifdef USE_BGFX
+#if 0   // Not implemented yet
         backend_ = std::make_unique<GPUDelaunayBackend>(
             "placeholder",
             GPUDelaunayTriangulator::Mode::FULL_GPU

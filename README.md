@@ -9,20 +9,19 @@ The project is currently positioned as an experimental research tool rather than
 - porous domains and random inner-boundary generation
 - PDE solving and mesh-coupled solution inspection
 - FEM error-analysis tooling, including Richardson-Aitken workflows
-- multiple rendering backends: bgfx by default, LLGL as an alternative, and a raw OpenGL fallback
+- LLGL as rendering backend
 
 ## Status
 
 - Primary tested environment: macOS
-- Default renderer: bgfx
-- LLGL path exists but should be treated as more experimental
+- Graphics API: Metal on MacOS; D3D12 on Windows
 - Project/archive formats are still evolving, so backward compatibility for saved assets is not guaranteed yet
 
 ## Repository Layout
 
 - `src/`: application, editor, geometry, FEM, renderer, object system, and file I/O
 - `include/`: vendored headers and small embedded third-party libraries
-- `shaders/`: bgfx and runtime shader sources
+- `shaders/`: shader sources
 - `fem_project/`: example or working project data
 - `cmake/`: CMake helper modules used by the top-level build
 
@@ -36,31 +35,50 @@ cd <repo-folder>
 git submodule update --init --recursive
 ```
 
-Configure and build with presets:
+Configure and build with presets using default CMake generator:
 
 ```bash
-cmake --preset release-bgfx
-cmake --build --preset release-bgfx
+cmake --preset default
+cmake --build --preset release
 ```
 
-The binary will be generated under `out/build/release-bgfx/` and will be named `DelaunayForge`.
+Configure and build using Visual Studio 2022/2026:
+```bash
+cmake --preset vs2022
+cmake --build --preset vs2022-release
+```
 
-Other useful presets:
+The binary will be generated under `/bin/{BuildConfigName}/` and will be named `DelaunayForge`.
 
-- `release-llgl`
-- `debug-opengl`
+All configure presets:
 
-If you prefer manual configuration, the main toggles are:
+- `default`
+- `vs2022`
+- `vs2026`
 
-- `USE_BGFX=ON|OFF`
-- `USE_LLGL=ON|OFF`
+All build presets for default configuration:
+
+- `debug`
+- `release`
+- `releaseWithDebugInfo`
+- `minSizeRel`
+
+All build presets for vs2022/vs2026 configurations:
+- `vs2022-debug`
+- `vs2022-release`
+- `vs2022-releaseWithDebugInfo`
+- `vs2022-minSizeRel`
+- `vs2026-debug`
+- `vs2026-release`
+- `vs2026-releaseWithDebugInfo`
+- `vs2026-minSizeRel`
 
 ## Dependencies
 
 This repository uses a mix of submodules, vendored code, and CMake `FetchContent`:
 
 - ImGui is included as a git submodule in `include/imgui`
-- `glfw`, `glm`, `bgfx.cmake`, and `LLGL` are fetched by CMake
+- `glfw`, `glm`, and `LLGL` are fetched by CMake
 - `glad` and `lz4` are vendored in `include/`
 
 Each third-party dependency remains under its own license terms.

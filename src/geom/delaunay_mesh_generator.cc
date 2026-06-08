@@ -1,13 +1,11 @@
 #include "delaunay_mesh_generator.h"
 #include "planar_mesh/planar_mesh_component.h"
 
+#include "delaunay_gpu.h"
 #include "math/curve.h"
+#include "log_categories.h"
 #include <algorithm>
 #include <utility> 
-#include "log_categories.h"
-#ifdef USE_BGFX
-#include "delaunay_gpu.h"
-#endif
 
 namespace fem {
 
@@ -38,15 +36,14 @@ void DelaunayMeshGenerator::generate_mesh(const fem::DelaunayMeshGeneratorConfig
                 backend_ = std::make_shared<CPUDelaunayBackend>();
                 break;
             case fem::TriBackendType::GPU:
-#ifdef USE_BGFX
+#if 0
                 backend_ = std::make_shared<GPUDelaunayBackend>(
                     "placeholder",
                     GPUDelaunayTriangulator::Mode::FULL_GPU
                 );
-#else
-                LOGT_WARN(LogGeometry, "GPU triangulation requested but USE_BGFX is OFF; falling back to CPU backend");
-                backend_ = std::make_shared<CPUDelaunayBackend>();
 #endif
+                LOGT_WARN(LogGeometry, "GPU triangulation requested but not implemented yes. Falling back to CPU backend");
+                backend_ = std::make_shared<CPUDelaunayBackend>();
                 break;
         }
 

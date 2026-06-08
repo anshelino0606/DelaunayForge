@@ -36,7 +36,6 @@ bool Editor::init(const EditorInitInfo& init_info) {
     if (is_initialized_) return true;
 
     if (!init_info.window 
-        || !init_info.mesh_update_callback 
         || !init_info.draw_debug_info_callback
     ) {
         return false;

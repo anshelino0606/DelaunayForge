@@ -1,31 +1,22 @@
 #include "renderer.h"
-#include "core/window_.h"
-#include "editor/editor.h"
-#include "rhi/rhi_context.h"
-#include "application/camera.h"
+#include "device.h"
+#include "viewport_grid_settings.h"
 #include "log_categories.h"
+#include "core/window_.h"
 #include "core/file_system/file_system.h"
+#include "editor/editor.h"
+#include "application/camera.h"
+#include "geom/mesh_component.h"
+#include "math/entities/math_entity.h"
+#include "math/pde/pde_component.h"
+
 #include <imgui/imgui.h>
+#include <LLGL/LLGL.h>
+#include <LLGL/Utils/VertexFormat.h>
+#include <stb/stb_image_write.h>
 
 #include <cmath>
 #include <vector>
-#include <stb/stb_image_write.h>
-
-#include "renderer/viewport_grid_settings.h"
-
-#if defined(USE_LLGL)
-    #include "device.h"
-    #include "geom/mesh_component.h"
-    #include "math/entities/math_entity.h"
-    #include "math/pde/pde_component.h"
-
-    #include <LLGL/LLGL.h>
-    #include <LLGL/Utils/VertexFormat.h>
-#endif
-
-#if defined(USE_BGFX)
-#include "rhi/graphics_program.h"
-#endif
 
 #if defined(_WIN32)
     constexpr const char* g_backend_name = "Direct3D12";
@@ -34,8 +25,6 @@
 #endif 
 
 namespace fem {
-
-#if defined(USE_LLGL)
 
 void LogCallbackLLGL(LLGL::Log::ReportType type, const char* text, void* userData, const LLGL::Log::ColorCodes& colors)
 {
@@ -171,9 +160,6 @@ void Renderer::shutdown() {
 
     imgui_renderer_->shutdown();
 
-#if defined(USE_BGFX)
-    mesh_program_.destroy();
-#endif
     is_initialized_ = false;
 }
 
@@ -401,24 +387,6 @@ void Renderer::draw_debug_info() const {
     //ImGui::Text("Indices: %zu", mesh_->get_indices().size());
     
     ImGui::End();
-}
-
-void Renderer::update_mesh(std::shared_ptr<DelaunayMeshGenerator> mesh_generator) {
-#if defined(USE_BGFX)
-    if (!mesh_) {
-        LOGT_WARN(LogRenderer, "update_mesh: mesh adapter is null");
-        return;
-    }
-    if (!mesh_generator) {
-        LOGT_WARN(LogRenderer, "update_mesh: mesh generator is null");
-        return;
-    }
-
-    mesh_->generate_mesh(mesh_generator);
-
-#else
-    (void)mesh_generator;
-#endif
 }
 
 ImTextureID Renderer::get_viewport_texture_id() const {
@@ -731,39 +699,5 @@ GridDrawRanges build_grid_vertices(std::vector<glm::vec3>& out_vertices, const g
 }
 
 } // namespace
-
-#else
-
-bool Renderer::init(const RendererInitInfo& init_info) {
-    (void)init_info;
-    is_initialized_ = true;
-    return true;
-}
-
-void Renderer::shutdown() {
-    is_initialized_ = false;
-}
-
-void Renderer::begin_frame() {}
-
-void Renderer::draw(const RendererDrawInfo& draw_info) {
-    (void)draw_info;
-}
-
-void Renderer::draw_debug_info() const {
-    ImGui::Begin("Debug Info");
-    ImGui::Text("(Renderer backend disabled: USE_LLGL is OFF)");
-    ImGui::End();
-}
-
-void Renderer::update_mesh(std::shared_ptr<DelaunayMeshGenerator> mesh_generator) {
-    (void)mesh_generator;
-}
-
-ImTextureID Renderer::get_viewport_texture_id() const {
-    return viewport_imgui_descriptor_;
-}
-
-#endif
 
 }

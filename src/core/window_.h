@@ -6,14 +6,6 @@
 
 struct GLFWwindow;
 
-#if defined(USE_BGFX)
-
-namespace bgfx {
-    struct PlatformData;
-}
-
-#endif 
-
 namespace fem {
 
 struct WindowInitInfo {
@@ -26,10 +18,6 @@ class Window {
 public:
     bool init(const WindowInitInfo& init_info);
     void shutdown();
-
-#if defined(USE_BGFX)
-    void fill_platform_data(bgfx::PlatformData& out_data) const;
-#endif
 
     bool should_close() const;
     void poll_events() const;
