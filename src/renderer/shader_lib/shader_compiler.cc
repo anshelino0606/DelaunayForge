@@ -10,12 +10,21 @@ namespace fem {
 ShaderCompiler::ShaderCompiler() {
     slang::createGlobalSession(global_session_.writeRef());
 
+#if defined(_WIN32)
     SlangProfileID profile_id = global_session_->findProfile("sm_6_6");
 
     slang::TargetDesc target_desc = {
         .format = SLANG_DXIL,
         .profile = profile_id
     };
+#elif defined(__APPLE__)
+    SlangProfileID profile_id = global_session_->findProfile("metal_2_4");
+
+    slang::TargetDesc target_desc = {
+        .format = SLANG_METAL,
+        .profile = profile_id
+    };
+#endif
 
     slang::SessionDesc session_desc = {
         .targets = &target_desc,

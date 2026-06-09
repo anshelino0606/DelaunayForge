@@ -42,12 +42,17 @@ void Shader::create(const InitInfo& info) {
 
     LLGL::ShaderDescriptor shader_desc;
     shader_desc.type = info.type;
-    shader_desc.sourceType = LLGL::ShaderSourceType::BinaryBuffer;
     shader_desc.debugName = info.debug_name.data();
     shader_desc.entryPoint = info.entry_point.data();
     shader_desc.source = static_cast<const char*>(info.data);
     shader_desc.sourceSize = info.data_size;
 
+#if defined(_WIN32)
+    shader_desc.sourceType = LLGL::ShaderSourceType::BinaryBuffer;
+#elif defined(__APPLE__)
+    shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
+#endif
+    
     if (shader_desc.type == LLGL::ShaderType::Vertex && info.vertex_attribs) {
         shader_desc.vertex = *info.vertex_attribs;
     }
