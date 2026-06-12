@@ -254,8 +254,10 @@ void ImGuiRenderer::update_descriptor(uint64_t descriptor_idx, const std::vector
 void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
     constexpr const char* shader_path = "imgui";
 
-    vertex_shader_ = shader_manager_->get_vertex_shader<VERTEX_LAYOUT_IMGUI>({shader_path});
-    pixel_shader_ = shader_manager_->get_pixel_shader({shader_path});
+    shader_program_ = shader_manager_->graphics_shader_program({
+        {shader_path},
+        VERTEX_LAYOUT_IMGUI
+    });
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.bindings = {
@@ -273,8 +275,8 @@ void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
     LLGL::GraphicsPipelineDescriptor pipeline_desc {
         .pipelineLayout = pipeline_layout_,
         .renderPass = const_cast<LLGL::RenderPass*>(render_pass),
-        .vertexShader = vertex_shader_->handle(),
-        .fragmentShader = pixel_shader_->handle(),
+        .vertexShader = shader_program_->vertex_shader().handle(),
+        .fragmentShader = shader_program_->fragment_shader().handle(),
         .indexFormat = index_format_,
         .primitiveTopology = LLGL::PrimitiveTopology::TriangleList,
         .depth = {

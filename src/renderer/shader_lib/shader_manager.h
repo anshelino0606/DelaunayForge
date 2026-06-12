@@ -1,8 +1,6 @@
 #pragma once
 
-#include "shader_.h"
-#include "device.h"
-#include "shader_compiler.h"
+#include "graphics_shader_program.h"
 #include <memory>
 #include <unordered_map>
 
@@ -10,29 +8,32 @@ namespace fem {
 
 class ShaderManager {
 public:
-    ShaderManager() = default;
+    ShaderManager();
     ~ShaderManager();
 
-    template<VertexLayout Layout = VERTEX_LAYOUT_DEFAULT>
-    Shader* get_vertex_shader(const ShaderCompileInfo& info) {
-        return get_shader(info, "vertex_main", LLGL::ShaderType::Vertex, Layout);
-    }
-
-    Shader* get_pixel_shader(const ShaderCompileInfo& info);
-    Shader* get_compute_shader(const ShaderCompileInfo& info);
+    GraphicsShaderProgram* graphics_shader_program(const GraphicsShaderProgramCreateInfo& create_info);
 
 private:
-    using ShaderMap = std::unordered_map<ShaderCompileInfo, std::unique_ptr<Shader>, ShaderCompileInfoHasher>;
+    template<typename TKey, typename TValue, typename THasher>
+    using ShaderProgramMap = std::unordered_map<TKey, TValue, THasher>;
 
-    ShaderCompiler shader_compiler_;
-    ShaderMap shaders_;
+    using GraphicsShaderProgramMap = ShaderProgramMap<
+        GraphicsShaderProgramCreateInfo, 
+        std::unique_ptr<GraphicsShaderProgram>,
+        GraphicsShaderProgramCreateInfoHasher  
+    >;
 
-    Shader* get_shader(
-        const ShaderCompileInfo& info, 
-        std::string_view default_entry_point, 
-        LLGL::ShaderType type,
-        VertexLayout vertex_layout = VERTEX_LAYOUT_DEFAULT
-    );
+    GraphicsShaderProgramMap graphics_shader_programs_;
+
+    template<typename TKey, typename TValue, typename THasher>
+    TValue::pointer get_shader_program(ShaderProgramMap<TKey, TValue, THasher>& map, const TKey& create_info) {
+        auto it = map.find(create_info);
+        if (it != map.end()) {
+            return it->second.get();
+        }
+
+        return map.emplace(create_info, new TValue::element_type(create_info)).first->second.get();
+    }
 };
 
 }

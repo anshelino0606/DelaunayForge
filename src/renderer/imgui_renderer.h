@@ -10,7 +10,7 @@ struct ImDrawData;
 
 namespace fem {
 
-class Shader;
+class GraphicsShaderProgram;
 class ShaderManager;
 
 struct ImGuiRendererInitInfo {
@@ -46,8 +46,7 @@ private:
     LLGL::PipelineState* pipeline_ = nullptr;
     LLGL::PipelineLayout* pipeline_layout_ = nullptr;
     LLGL::Texture* font_texture_ = nullptr;
-    Shader* vertex_shader_ = nullptr;
-    Shader* pixel_shader_ = nullptr;
+    GraphicsShaderProgram* shader_program_ = nullptr;
     LLGL::Buffer* vs_constant_buffer_ = nullptr;
     std::vector<LLGL::Buffer*> vertex_buffers_;
     std::vector<LLGL::Buffer*> index_buffers_;

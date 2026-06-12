@@ -61,16 +61,14 @@ private:
     LLGL::RenderTarget* viewport_render_target_ = nullptr;
     ImTextureID viewport_imgui_descriptor_ = 0;
 
-    Shader* object_vs_;
-    Shader* object_ps_;
+    GraphicsShaderProgram* object_program_;
     LLGL::PipelineState* object_pipeline_ = nullptr;
     LLGL::PipelineLayout* object_pipeline_layout_ = nullptr;
     LLGL::ResourceHeap* object_resource_heap_ = nullptr;
     LLGL::Buffer* object_vs_constant_buffer_ = nullptr;
     LLGL::Buffer* object_ps_constant_buffer_ = nullptr;
 
-    Shader* grid_vs_ = nullptr;
-    Shader* grid_ps_ = nullptr;
+    GraphicsShaderProgram* grid_program_;
     LLGL::PipelineState* grid_pipeline_ = nullptr;
     LLGL::PipelineLayout* grid_pipeline_layout_ = nullptr;
     LLGL::ResourceHeap* grid_resource_heap_ = nullptr;

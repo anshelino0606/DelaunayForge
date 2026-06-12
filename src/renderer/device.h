@@ -31,17 +31,17 @@ enum VertexLayout {
 inline std::array<LLGL::VertexShaderAttributes, VERTEX_LAYOUT_COUNT> g_vertex_layouts = {{
     {
         .inputAttribs = {
-            LLGL::VertexAttribute{"position", LLGL::Format::RGB32Float, 0, 0, sizeof(glm::vec3), 0}
+            LLGL::VertexAttribute{"position", LLGL::Format::RGB32Float, 0, 0, uint32_t(sizeof(glm::vec3)), 0}
         }
     },
     {
         .inputAttribs = {
-            LLGL::VertexAttribute{"position", LLGL::Format::RG32Float, 0, offsetof(ImDrawVert, pos), sizeof(ImDrawVert), 0},
-            LLGL::VertexAttribute{"texCoord", LLGL::Format::RG32Float, 1, offsetof(ImDrawVert, uv), sizeof(ImDrawVert), 0},
+            LLGL::VertexAttribute{"position", LLGL::Format::RG32Float, 0, uint32_t(offsetof(ImDrawVert, pos)), uint32_t(sizeof(ImDrawVert)), 0},
+            LLGL::VertexAttribute{"texCoord", LLGL::Format::RG32Float, 1, uint32_t(offsetof(ImDrawVert, uv)), uint32_t(sizeof(ImDrawVert)), 0},
         #if defined(_WIN32)
-            LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UNorm, 2, offsetof(ImDrawVert, col), sizeof(ImDrawVert), 0}
+            LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UNorm, 2, uint32_t(offsetof(ImDrawVert, col)), uint32_t(sizeof(ImDrawVert)), 0}
         #elif defined(__APPLE__)
-            LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UInt, 2, offsetof(ImDrawVert, col), sizeof(ImDrawVert), 0}
+            LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UInt, 2, uint32_t(offsetof(ImDrawVert, col)), uint32_t(sizeof(ImDrawVert)), 0}
         #endif
         }
     }

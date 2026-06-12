@@ -1,10 +1,8 @@
 #include "shader_.h"
-#include "utils.h"
-#include "device.h"
+#include "renderer/device.h"
 
 #include <slang.h>
 #include <slang-com-ptr.h>
-#include <array>
 
 namespace fem {
 

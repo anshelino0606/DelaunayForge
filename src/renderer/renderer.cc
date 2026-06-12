@@ -473,10 +473,9 @@ LLGL::Shader* Renderer::load_shader(std::string_view shader_name, LLGL::ShaderTy
 }
 
 void Renderer::create_object_pipeline() {
-    constexpr const char* object_shader_path = "object";
+    constexpr const char* shader_path = "object";
 
-    object_vs_ = shader_manager_->get_vertex_shader({object_shader_path});
-    object_ps_ = shader_manager_->get_pixel_shader({object_shader_path});
+    object_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -492,8 +491,8 @@ void Renderer::create_object_pipeline() {
     object_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = object_vs_->handle();
-    pipeline_desc.fragmentShader = object_ps_->handle();
+    pipeline_desc.vertexShader = object_program_->vertex_shader().handle();
+    pipeline_desc.fragmentShader = object_program_->fragment_shader().handle();
     pipeline_desc.pipelineLayout = object_pipeline_layout_;
     pipeline_desc.rasterizer.multiSampleEnabled = false;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::TriangleList;
@@ -538,8 +537,7 @@ void Renderer::create_object_pipeline() {
 void Renderer::create_grid_pipeline() {
     constexpr const char* shader_path = "grid";
 
-    grid_vs_ = shader_manager_->get_vertex_shader({shader_path});
-    grid_ps_ = shader_manager_->get_pixel_shader({shader_path});
+    grid_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -554,8 +552,8 @@ void Renderer::create_grid_pipeline() {
     grid_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = grid_vs_->handle();
-    pipeline_desc.fragmentShader = grid_ps_->handle();
+    pipeline_desc.vertexShader = grid_program_->vertex_shader().handle();
+    pipeline_desc.fragmentShader = grid_program_->fragment_shader().handle();
     pipeline_desc.pipelineLayout = grid_pipeline_layout_;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::LineList;
     pipeline_desc.renderPass = viewport_render_target_->GetRenderPass();
