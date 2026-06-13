@@ -45,7 +45,7 @@ public:
     static std::string get_project_name();
     static bool is_project_existed(const std::string& project_path);
 
-    static std::string get_source_path() { return SOURCE_DIR; }
+    static std::string_view get_source_path() { return SOURCE_DIR; }
 
     static FileStream* open(const std::string& str_path, const char* mode);
     static bool close(FileStream* stream);
@@ -65,6 +65,8 @@ public:
     
     static std::string get_relative_path(const std::string& root_path, const std::string& target_path);
     static std::string get_absolute_path(const std::string& root_path, const std::string& relative_path);
+
+    static std::string absolute_path_from_source(const std::string& relative_path);
 
     static bool is_relative(const std::string& path);
     static bool is_absolute(const std::string& path);

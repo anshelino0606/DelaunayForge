@@ -20,7 +20,7 @@ struct VS_OUTPUT
 ConstantBuffer<Params> cParams;
 
 [shader("vertex")]
-VS_OUTPUT vertex_main(VS_INPUT input)
+VS_OUTPUT vertexMain(VS_INPUT input)
 {
     VS_OUTPUT output;
 
@@ -38,7 +38,7 @@ Texture2D tex : register(t0);
 SamplerState samplerLinear : register(s0);
 
 [shader("pixel")]
-float4 fragment_main(VS_OUTPUT input) : SV_Target {
+float4 fragmentMain(VS_OUTPUT input) : SV_Target {
     float4 textureColor = tex.Sample(samplerLinear, input.uv);
     return input.color * textureColor;
 }

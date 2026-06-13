@@ -238,6 +238,10 @@ std::string FileSystem::get_absolute_path(const std::string& root_path, const st
     return (base_path / target_path).string();
 }
 
+std::string FileSystem::absolute_path_from_source(const std::string& relative_path) {
+    return std::format("{}/{}", get_source_path(), relative_path);
+}
+
 bool FileSystem::is_relative(const std::string& path) {
     return std::filesystem::path(path).is_relative();
 }

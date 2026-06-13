@@ -56,7 +56,6 @@ private:
     void create_pipeline(const LLGL::RenderPass* render_pass);
     void create_resources(LLGL::SwapChain* swap_chain);
     void create_font_texture();
-    LLGL::Shader* load_shader(std::string_view shader_name, LLGL::ShaderType shader_type);
 
     LLGL::Buffer* get_vertex_buffer(uint32_t buffer_size);
     LLGL::Buffer* get_index_buffer(uint32_t buffer_size);

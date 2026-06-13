@@ -1,5 +1,6 @@
 #include "shader_compiler.h"
 #include "utils.h"
+#include "shader_compilation_global_session.h"
 #include "core/file_system/file_system.h"
 #include "log_categories.h"
 #include <format>
@@ -7,36 +8,16 @@
 namespace fem {
 
 void ShaderCompiler::init() {
-    slang::createGlobalSession(s_global_session_.writeRef());
-
 #if defined(_WIN32)
-    SlangProfileID profile_id = s_global_session_->findProfile("sm_6_6");
-
-    slang::TargetDesc target_desc = {
-        .format = SLANG_DXIL,
-        .profile = profile_id
-    };
+    s_session_ = ShaderCompilationSessionHandle::create(GraphicsAPI::D3D12);
 #elif defined(__APPLE__)
-    SlangProfileID profile_id = global_session_->findProfile("metal_2_4");
-
-    slang::TargetDesc target_desc = {
-        .format = SLANG_METAL,
-        .profile = profile_id
-    };
+    s_session_ = ShaderCompilationSessionHandle::create(GraphicsAPI::METAL);
 #endif
-
-    slang::SessionDesc session_desc = {
-        .targets = &target_desc,
-        .targetCount = 1,
-        .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR
-    };
-
-    s_global_session_->createSession(session_desc, s_session_.writeRef());
 }
 
 void ShaderCompiler::shutdown() {
-    s_session_->Release();
-    s_global_session_->Release();
+    s_session_->handle()->release();
+    ShaderCompilationGlobalSession::instance()->release();
     slang::shutdown();
 }
 
@@ -49,10 +30,8 @@ Slang::ComPtr<slang::IModule> ShaderCompiler::load_module(const std::string& rel
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
 
     Slang::ComPtr<slang::IModule> slang_module;
-    slang_module = s_session_->loadModuleFromSourceString(
+    slang_module = s_session_->handle()->loadModule(
         load_info.name.c_str(), 
-        load_info.relative_path.c_str(), 
-        shader_content.c_str(),
         diagnostics_blob.writeRef()
     );
     log_diagnostics(diagnostics_blob);
@@ -76,7 +55,7 @@ Slang::ComPtr<slang::IComponentType> ShaderCompiler::compose_program(slang::ICom
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     Slang::ComPtr<slang::IComponentType> composed_program;
 
-    SlangResult result = s_session_->createCompositeComponentType(
+    SlangResult result = s_session_->handle()->createCompositeComponentType(
         component_types, 
         component_type_count, 
         composed_program.writeRef(), 
@@ -112,7 +91,7 @@ ShaderCompiler::ShaderModuleLoadInfo ShaderCompiler::module_load_info_from_relat
     
     module_info.name = FileSystem::get_file_name(relative_path);
     module_info.relative_path = std::format("shaders/{}.slang", relative_path);
-    module_info.absolute_path = FileSystem::get_absolute_path(FileSystem::get_source_path(), module_info.relative_path);
+    module_info.absolute_path = FileSystem::absolute_path_from_source(module_info.relative_path);
     return module_info;
 }
 

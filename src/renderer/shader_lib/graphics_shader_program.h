@@ -6,8 +6,8 @@
 
 namespace fem {
 
-constexpr const char* g_vertex_default_entry_point = "vertex_main";
-constexpr const char* g_fragment_default_entry_point = "fragment_main";
+constexpr const char* g_vertex_default_entry_point = "vertexMain";
+constexpr const char* g_fragment_default_entry_point = "fragmentMain";
 
 struct GraphicsShaderProgramCreateInfo : BaseShaderProgramCreateInfo {
     VertexLayout vertex_layout = VERTEX_LAYOUT_DEFAULT;

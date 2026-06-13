@@ -35,5 +35,4 @@ private:
     void link_program();
 };
 
-    
 }

@@ -1,10 +1,11 @@
 #pragma once
 
-#include "shader_types.h"
+#include "shader_compilation_session.h"
 
 #include <slang.h>
 #include <slang-com-ptr.h>
 #include <slang-com-helper.h>
+#include <string>
 
 namespace fem {
 
@@ -20,8 +21,7 @@ public:
     static Slang::ComPtr<slang::IBlob> compile_shader(slang::IComponentType* linked_program, uint32_t entry_point_idx);
 
 private:
-    inline static Slang::ComPtr<slang::IGlobalSession> s_global_session_;
-    inline static Slang::ComPtr<slang::ISession> s_session_;
+    inline static ShaderCompilationSessionHandle s_session_;
 
     struct ShaderModuleLoadInfo {
         std::string name;

@@ -76,7 +76,6 @@ private:
     LLGL::Buffer* grid_ps_constant_buffer_ = nullptr;
     LLGL::Buffer* grid_vertex_buffer_ = nullptr;
 
-    LLGL::Shader* load_shader(std::string_view shader_name, LLGL::ShaderType shader_type);
     void create_object_pipeline();
     void create_grid_pipeline();
     void create_dummy_textures();
