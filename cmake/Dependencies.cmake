@@ -64,6 +64,10 @@ set(SLANG_ENABLE_REPLAYER OFF CACHE BOOL "" FORCE)
 set(SLANG_EXCLUDE_DAWN OFF CACHE BOOL "" FORCE)
 set(SLANG_LIB_TYPE STATIC CACHE BOOL "" FORCE)
 
+if (APPLE)
+  set(SLANG_ENABLE_DXIL OFF CACHE BOOL "" FORCE)
+endif()
+
 FetchContent_Declare(
   slang
   GIT_REPOSITORY https://github.com/shader-slang/slang
