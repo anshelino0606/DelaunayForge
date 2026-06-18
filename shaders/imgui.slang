@@ -1,4 +1,4 @@
-cbuffer UIData : register(b0) {
+struct Params {
     float2 scale;
     float2 translate;
 };
@@ -17,17 +17,28 @@ struct VS_OUTPUT
     float4 color : COLOR0;
 };
 
-VS_OUTPUT main(VS_INPUT input)
+ConstantBuffer<Params> cParams;
+
+[shader("vertex")]
+VS_OUTPUT vertexMain(VS_INPUT input)
 {
     VS_OUTPUT output;
 
     output.color = input.color;
     output.uv = input.uv;
 
-    float2 scaled = input.position * scale + translate;
+    float2 scaled = input.position * cParams.scale + cParams.translate;
     scaled.y *= -1.0f;
     output.position = float4(scaled, 0.0f, 1.0f);
 
     return output;
 }
 
+Texture2D tex : register(t0);
+SamplerState samplerLinear : register(s0);
+
+[shader("pixel")]
+float4 fragmentMain(VS_OUTPUT input) : SV_Target {
+    float4 textureColor = tex.Sample(samplerLinear, input.uv);
+    return input.color * textureColor;
+}

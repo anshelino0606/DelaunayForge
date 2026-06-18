@@ -2,6 +2,7 @@
 #define FEM_RENDERER_H
 
 #include "common.h"
+#include "shader_lib/shader_manager.h"
 #include "geom/delaunay_mesh_generator.h"
 #include <functional>
 
@@ -47,6 +48,7 @@ private:
     Window* window_ = nullptr;
 
     std::unique_ptr<ImGuiRenderer> imgui_renderer_;
+    std::unique_ptr<ShaderManager> shader_manager_;
 
     LLGL::RenderingDebugger debugger_;
 
@@ -59,15 +61,14 @@ private:
     LLGL::RenderTarget* viewport_render_target_ = nullptr;
     ImTextureID viewport_imgui_descriptor_ = 0;
 
-    LLGL::Shader* object_vs_ = nullptr;
-    LLGL::Shader* object_ps_ = nullptr;
+    GraphicsShaderProgram* object_program_;
     LLGL::PipelineState* object_pipeline_ = nullptr;
     LLGL::PipelineLayout* object_pipeline_layout_ = nullptr;
     LLGL::ResourceHeap* object_resource_heap_ = nullptr;
     LLGL::Buffer* object_vs_constant_buffer_ = nullptr;
     LLGL::Buffer* object_ps_constant_buffer_ = nullptr;
 
-    LLGL::Shader* grid_ps_ = nullptr;
+    GraphicsShaderProgram* grid_program_;
     LLGL::PipelineState* grid_pipeline_ = nullptr;
     LLGL::PipelineLayout* grid_pipeline_layout_ = nullptr;
     LLGL::ResourceHeap* grid_resource_heap_ = nullptr;
@@ -75,7 +76,6 @@ private:
     LLGL::Buffer* grid_ps_constant_buffer_ = nullptr;
     LLGL::Buffer* grid_vertex_buffer_ = nullptr;
 
-    LLGL::Shader* load_shader(std::string_view shader_name, LLGL::ShaderType shader_type);
     void create_object_pipeline();
     void create_grid_pipeline();
     void create_dummy_textures();

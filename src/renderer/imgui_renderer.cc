@@ -1,4 +1,5 @@
 #include "imgui_renderer.h"
+#include "shader_lib/shader_manager.h"
 #include "log_categories.h"
 #include "core/file_system/file_system.h"
 #include "renderer/device.h"
@@ -34,6 +35,13 @@ bool ImGuiRenderer::init(const ImGuiRendererInitInfo& init_info) {
         return false;
     }
 
+    if (!init_info.shader_manager) {
+        LOGT_ERROR(LogRenderer, "ImGuiRenderer::init(): shader_manager is null");
+        return false;
+    }
+
+    shader_manager_ = init_info.shader_manager;
+
     if constexpr (sizeof(ImDrawIdx) == 2) {
         index_format_ = LLGL::Format::R16UInt;
     } else {
@@ -55,8 +63,6 @@ void ImGuiRenderer::shutdown() {
     g_device->Release(*pipeline_);
     g_device->Release(*pipeline_layout_);
     g_device->Release(*font_texture_);
-    g_device->Release(*vertex_shader_);
-    g_device->Release(*pixel_shader_);
     g_device->Release(*vs_constant_buffer_);
     
     for (LLGL::Buffer* buffer : vertex_buffers_) {
@@ -246,11 +252,12 @@ void ImGuiRenderer::update_descriptor(uint64_t descriptor_idx, const std::vector
 }
 
 void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
-    constexpr std::string_view vertex_shader_path = "imgui_vs";
-    constexpr std::string_view pixel_shader_path = "imgui_ps";
+    constexpr const char* shader_path = "imgui";
 
-    vertex_shader_ = load_shader(vertex_shader_path, LLGL::ShaderType::Vertex);
-    pixel_shader_ = load_shader(pixel_shader_path, LLGL::ShaderType::Fragment);
+    shader_program_ = shader_manager_->graphics_shader_program({
+        {shader_path},
+        VERTEX_LAYOUT_IMGUI
+    });
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.bindings = {
@@ -268,8 +275,8 @@ void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
     LLGL::GraphicsPipelineDescriptor pipeline_desc {
         .pipelineLayout = pipeline_layout_,
         .renderPass = const_cast<LLGL::RenderPass*>(render_pass),
-        .vertexShader = vertex_shader_,
-        .fragmentShader = pixel_shader_,
+        .vertexShader = shader_program_->vertex_shader().handle(),
+        .fragmentShader = shader_program_->fragment_shader().handle(),
         .indexFormat = index_format_,
         .primitiveTopology = LLGL::PrimitiveTopology::TriangleList,
         .depth = {
@@ -372,80 +379,6 @@ void ImGuiRenderer::create_font_texture() {
     uint64_t font_texture_idx = allocate_imgui_descriptor(font_texture_);
 
     io.Fonts->SetTexID(static_cast<ImTextureID>(font_texture_idx));
-}
-
-LLGL::Shader* ImGuiRenderer::load_shader(std::string_view shader_name, LLGL::ShaderType shader_type) {
-#if defined(_WIN32)
-    std::string shader_name_ext = std::format("{}.hlsl", shader_name);
-#elif defined(__APPLE__)
-    std::string shader_name_ext = std::format("{}.metal", shader_name);
-#endif 
-
-    std::string shader_content;
-    std::string full_path = std::format("{}/shaders/{}", FileSystem::get_source_path(), shader_name_ext);
-
-    FileSystem::read(full_path, shader_content);
-
-    LLGL::ShaderDescriptor shader_desc;
-    shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
-    shader_desc.source = shader_content.c_str();
-    shader_desc.type = shader_type;
-    
-#if defined(_WIN32)
-    shader_desc.entryPoint = "main";
-
-    switch (shader_type) {
-        case LLGL::ShaderType::Compute:
-            shader_desc.profile = "cs_5_1";
-            break;
-        case LLGL::ShaderType::Vertex:
-            shader_desc.profile = "vs_5_1";
-            break;
-        case LLGL::ShaderType::Fragment:
-            shader_desc.profile = "ps_5_1";
-            break;
-        default:
-            LOGT_ERROR(LogRenderer, "Unsupported shader type!");
-            return nullptr;
-    }
-#elif defined(__APPLE__)
-    shader_desc.profile = "2.1";
-
-    switch (shader_type) {
-        case LLGL::ShaderType::Compute:
-            shader_desc.entryPoint = "kernel_main";
-            break;
-        case LLGL::ShaderType::Vertex:
-            shader_desc.entryPoint = "vertex_main";
-            break;
-        case LLGL::ShaderType::Fragment:
-            shader_desc.entryPoint = "fragment_main";
-            break;
-        default:
-            LOGT_ERROR(LogRenderer, "Unsupported shader type!");
-            return nullptr;
-    }
-#endif
-
-    if (shader_type == LLGL::ShaderType::Vertex) {
-        shader_desc.vertex.inputAttribs = g_vertex_attribs;
-    }
-
-    LLGL::Shader* shader = g_device->CreateShader(shader_desc);
-
-    if (!shader) {
-        LOGT_ERROR(LogRenderer, "Failed to load shader %s", full_path.c_str());
-    }
-
-    if (shader && shader->GetReport()) {
-        const LLGL::Report* report = shader->GetReport();
-
-        if (report->HasErrors()) {
-            LOGT_ERROR(LogRenderer, "%s", report->GetText());
-        }
-    }
-
-    return shader;
 }
 
 LLGL::Buffer* ImGuiRenderer::get_vertex_buffer(uint32_t buffer_size) {

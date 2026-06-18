@@ -88,10 +88,12 @@ bool Renderer::init(const RendererInitInfo& init_info) {
     create_dummy_textures();
     create_samplers();
 
+    shader_manager_ = std::make_unique<ShaderManager>();
     imgui_renderer_ = std::make_unique<ImGuiRenderer>();
 
     imgui_renderer_->init({
         .swap_chain = swap_chain_,
+        .shader_manager = shader_manager_.get()
     });
 
     {
@@ -137,13 +139,13 @@ bool Renderer::init(const RendererInitInfo& init_info) {
 }
 
 void Renderer::shutdown() {
+    shader_manager_.reset();
+
     g_device->Release(*swap_chain_);
     g_device->Release(*main_cmd_);
     g_device->Release(*viewport_color_texture_);
     g_device->Release(*viewport_depth_texture_);
     g_device->Release(*viewport_render_target_);
-    g_device->Release(*object_vs_);
-    g_device->Release(*object_ps_);
     g_device->Release(*object_pipeline_);
     g_device->Release(*object_pipeline_layout_);
     g_device->Release(*object_resource_heap_);
@@ -156,7 +158,6 @@ void Renderer::shutdown() {
     if (grid_resource_heap_) g_device->Release(*grid_resource_heap_);
     if (grid_pipeline_layout_) g_device->Release(*grid_pipeline_layout_);
     if (grid_pipeline_) g_device->Release(*grid_pipeline_);
-    if (grid_ps_) g_device->Release(*grid_ps_);
 
     imgui_renderer_->shutdown();
 
@@ -393,90 +394,10 @@ ImTextureID Renderer::get_viewport_texture_id() const {
     return viewport_imgui_descriptor_;
 }
 
-LLGL::Shader* Renderer::load_shader(std::string_view shader_name, LLGL::ShaderType shader_type) {
-#if defined(_WIN32)
-    std::string shader_name_ext = std::format("{}.hlsl", shader_name);
-#elif defined(__APPLE__)
-    std::string shader_name_ext = std::format("{}.metal", shader_name);
-#endif 
-
-    std::string shader_content;
-    std::string full_path = std::format("{}/shaders/{}", FileSystem::get_source_path(), shader_name_ext);
-
-    FileSystem::read(full_path, shader_content);
-
-    LLGL::ShaderDescriptor shader_desc;
-    shader_desc.entryPoint = "main";
-    shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
-    shader_desc.source = shader_content.c_str();
-    shader_desc.type = shader_type;
-    
-#if defined(_WIN32)
-    switch (shader_type) {
-        case LLGL::ShaderType::Compute:
-            shader_desc.profile = "cs_5_1";
-            break;
-        case LLGL::ShaderType::Vertex:
-            shader_desc.profile = "vs_5_1";
-            break;
-        case LLGL::ShaderType::Fragment:
-            shader_desc.profile = "ps_5_1";
-            break;
-        default:
-            LOGT_ERROR(LogRenderer, "Unsupported shader type!");
-            return nullptr;
-    }
-#elif defined(__APPLE__)
-    shader_desc.profile = "2.1";
-
-    switch (shader_type) {
-        case LLGL::ShaderType::Compute:
-            shader_desc.entryPoint = "kernel_main";
-            break;
-        case LLGL::ShaderType::Vertex:
-            shader_desc.entryPoint = "vertex_main";
-            break;
-        case LLGL::ShaderType::Fragment:
-            shader_desc.entryPoint = "fragment_main";
-            break;
-        default:
-            LOGT_ERROR(LogRenderer, "Unsupported shader type!");
-            return nullptr;
-    }
-#endif
-
-    if (shader_type == LLGL::ShaderType::Vertex) {
-        LLGL::VertexShaderAttributes attributes;
-        attributes.inputAttribs = {
-            LLGL::VertexAttribute{"position", LLGL::Format::RGB32Float, 0, 0, sizeof(glm::vec3), 0}
-        };
-
-        shader_desc.vertex = attributes;
-    }
-
-    LLGL::Shader* shader = g_device->CreateShader(shader_desc);
-
-    if (!shader) {
-        LOGT_ERROR(LogRenderer, "Failed to load shader %s", full_path.c_str());
-    }
-
-    if (shader && shader->GetReport()) {
-        const LLGL::Report* report = shader->GetReport();
-
-        if (report->HasErrors()) {
-            LOGT_ERROR(LogRenderer, "%s", report->GetText());
-        }
-    }
-
-    return shader;
-}
-
 void Renderer::create_object_pipeline() {
-    constexpr std::string_view object_vs_path = "object_vs";
-    constexpr std::string_view object_fs_path = "object_ps";
+    constexpr const char* shader_path = "object";
 
-    object_vs_ = load_shader(object_vs_path, LLGL::ShaderType::Vertex);
-    object_ps_ = load_shader(object_fs_path, LLGL::ShaderType::Fragment);
+    object_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -492,8 +413,8 @@ void Renderer::create_object_pipeline() {
     object_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = object_vs_;
-    pipeline_desc.fragmentShader = object_ps_;
+    pipeline_desc.vertexShader = object_program_->vertex_shader().handle();
+    pipeline_desc.fragmentShader = object_program_->fragment_shader().handle();
     pipeline_desc.pipelineLayout = object_pipeline_layout_;
     pipeline_desc.rasterizer.multiSampleEnabled = false;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::TriangleList;
@@ -536,9 +457,9 @@ void Renderer::create_object_pipeline() {
 }
 
 void Renderer::create_grid_pipeline() {
-    constexpr std::string_view grid_fs_path = "grid_ps";
+    constexpr const char* shader_path = "grid";
 
-    grid_ps_ = load_shader(grid_fs_path, LLGL::ShaderType::Fragment);
+    grid_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -553,8 +474,8 @@ void Renderer::create_grid_pipeline() {
     grid_pipeline_layout_ = g_device->CreatePipelineLayout(layout_desc);
 
     LLGL::GraphicsPipelineDescriptor pipeline_desc;
-    pipeline_desc.vertexShader = object_vs_;
-    pipeline_desc.fragmentShader = grid_ps_;
+    pipeline_desc.vertexShader = grid_program_->vertex_shader().handle();
+    pipeline_desc.fragmentShader = grid_program_->fragment_shader().handle();
     pipeline_desc.pipelineLayout = grid_pipeline_layout_;
     pipeline_desc.primitiveTopology = LLGL::PrimitiveTopology::LineList;
     pipeline_desc.renderPass = viewport_render_target_->GetRenderPass();
