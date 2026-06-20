@@ -9,6 +9,7 @@
 #include "core/file_system/archive_test.h"
 #include "core/project_file_extensions.h"
 #include "math/entities/planar_math_entity.h"
+#include "core/object/object_destruction_queue.h"
 #include "editor/events.h"
 #include <fstream>
 
@@ -86,6 +87,7 @@ void Application::run() {
         });
 
         EventManager::get().dispatch_events();
+        g_object_destruction_queue.update();
     }
 }
 

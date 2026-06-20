@@ -5,6 +5,7 @@
 #include "type_manager.h"
 #include "attribute.h"
 #include "type_attribute.h"
+#include "object_destruction_queue.h"
 #include "core/macro.h"
 #include "core/compile_time_hash.h"
 #include "core/file_system/archive.h"
@@ -343,8 +344,18 @@ T* create_object(Archive& archive) {
     return static_cast<T*>(create_object(archive));
 }
 
-inline void destroy_object(Object* object) {
+inline ObjectDestructionQueue g_object_destruction_queue;
+
+inline void destroy_object_immediate(Object* object) {
     TypeManager::destroy_object(object);
+}
+
+inline void destroy_object(Object* object) {
+    g_object_destruction_queue.destroy(object);
+}
+
+inline void destroy_object(const ObjectDestroyHandler& handler) {
+    g_object_destruction_queue.destroy(handler);
 }
 
 }

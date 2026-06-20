@@ -4,12 +4,14 @@
 #include "object.h"
 #include "function.h"
 #include "member.h"
+#include "core/utils.h"
 #include "property_attribute.h"
 #include "core/file_system/archive.h"
 #include "logger/logger_macros.h"
+#include <glm/glm.hpp>
 #include <string>
 #include <stdexcept>
-#include <glm/glm.hpp>
+#include <utility>
 
 namespace fem {
 
@@ -38,7 +40,7 @@ struct get_element_type<std::vector<T, Alloc>> {
 template<typename T>
 using element_type_t = typename get_element_type<std::decay_t<T>>::type;
 
-enum class PropertyType {
+enum class PropertyType : uint32_t {
     INT32,
     UINT32,
     INT64,
@@ -65,8 +67,13 @@ enum class PropertyType {
     ARRAY,
     OBJECT,
     STRUCT,
-    ENUM
+    ENUM,
+    COUNT
 };
+
+constexpr uint32_t property_type_count() {
+    return Utils::to_index(PropertyType::COUNT);
+}
 
 template<typename T>
 struct PropertyTypeEnumMapper {
@@ -419,6 +426,10 @@ public:
         } else {
             add_array_value_internal(object, &value);
         }
+
+        if (const OnArrayValueAdded* on_added = get_attribute<OnArrayValueAdded>()) {
+            on_added->on_added(object);
+        }
     }
 
     template<
@@ -427,6 +438,10 @@ public:
     >
     void emplace_value(OwnerType* object) {
         add_array_value_internal(object, nullptr);
+
+        if (const OnArrayValueAdded* on_added = get_attribute<OnArrayValueAdded>()) {
+            on_added->on_added(object);
+        }
     }
 
     template<
@@ -452,18 +467,30 @@ public:
         EnableIfValidPropertyOwner<OwnerType> = 0
     >
     void erase(OwnerType* object, uint64_t index) {
-        switch (get_value_type()) {
-        case PropertyType::OBJECT: {
-            Object* old_value = get_value_as_object(object, index);
-            destroy_object(old_value);
-            erase_element(object, index);
-            break;
+        const OnArrayValueRemoved* on_removed_attr = get_attribute<OnArrayValueRemoved>();
+
+        if (on_removed_attr && on_removed_attr->on_pre_removed) {
+            on_removed_attr->on_pre_removed(object, get_value_ptr(object, index));
         }
-        default: {
-            erase_element(object, index);
-            break;
-        }
-        }
+
+        destroy_object([this, object, index, on_removed_attr] {
+            switch (get_value_type()) {
+            case PropertyType::OBJECT: {
+                Object* old_value = get_value_as_object(object, index);
+                destroy_object_immediate(old_value);
+                erase_element(object, index);
+                break;
+            }
+            default: {
+                erase_element(object, index);
+                break;
+            }
+            }
+
+            if (on_removed_attr && on_removed_attr->on_post_removed) {
+                on_removed_attr->on_post_removed(object);
+            }
+        });
     }
 
     template<

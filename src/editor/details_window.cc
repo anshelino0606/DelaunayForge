@@ -1,6 +1,5 @@
 #include "details_window.h"
 #include "canvas_window.h"
-#include "widgets.h"
 #include "core/entity/entity.h"
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
@@ -9,6 +8,7 @@
 #include "math/fem/fem_problem.h"
 #include "math/fem/fem_mesh.h"
 #include "math/entities/planar_math_entity.h"
+#include "widgets/object_widget.h"
 #include <imgui/imgui.h>
 
 #include <algorithm>
@@ -69,11 +69,11 @@ void DetailsWindow::draw(const DetailsWindowDrawInfo& draw_info) {
 
     if (last_selected_entity_) {
         if (last_selected_mesh_) {
-            Widgets::draw_object(last_selected_mesh_);
+            ObjectWidget().draw(last_selected_mesh_);
         }
 
         if (PDEComponent* pde = last_selected_entity_->get_component<PDEComponent>()) {
-            Widgets::draw_object(pde);
+            ObjectWidget().draw(pde);
         }
     }
 

@@ -1,5 +1,5 @@
 #include "equtaion_test_window.h"
-#include "editor/widgets.h"
+#include "editor/widgets/object_widget.h"
 #include "math/pde/pde_component.h"
 
 namespace fem {
@@ -14,7 +14,7 @@ EquationTestWindow::~EquationTestWindow() {
 
 void EquationTestWindow::draw() {
     ImGui::Begin("Equation Test Window");
-    Widgets::draw_object(component_);
+    ObjectWidget().draw(component_);
     ImGui::End();
 }
 

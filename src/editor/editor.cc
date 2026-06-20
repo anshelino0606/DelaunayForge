@@ -1,5 +1,4 @@
 #include "editor.h"
-#include "widgets.h"
 #include "core/window_.h"
 #include "core/entity/entity.h"
 #include "math/pde/pde_component.h"
@@ -164,8 +163,6 @@ EditorDrawResult Editor::draw(const EditorDrawInfo& draw_info) {
     });
 
     ImGui::Render();
-
-    Widgets::execute_post_draw_callbacks();
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImVec2 win_pos_pt = vp->Pos;

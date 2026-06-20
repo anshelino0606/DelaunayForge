@@ -1,5 +1,5 @@
 #include "ui_auto_gen_example.h"
-#include "editor/widgets.h"
+#include "editor/widgets/object_widget.h"
 #include "core/object/type_attribute.h"
 
 namespace fem {
@@ -157,23 +157,23 @@ void draw_test_auto_ui_gen_window() {
     }
 
     ImGui::Begin("Test Auto UI Slider and Drags Generation");
-    Widgets::draw_object(g_slider_and_drags_example);
+    ObjectWidget().draw(g_slider_and_drags_example);
     ImGui::End();
 
     ImGui::Begin("Test Auto UI String Checkbox Enum Generation");
-    Widgets::draw_object(g_string_checkbox_enum_example);
+    ObjectWidget().draw(g_string_checkbox_enum_example);
     ImGui::End();
 
     ImGui::Begin("Test Auto UI Array Generation");
-    Widgets::draw_object(g_arrays_example);
+    ObjectWidget().draw(g_arrays_example);
     ImGui::End();
 
     ImGui::Begin("Test Auto UI Base Class Generation");
-    Widgets::draw_object(g_base_class_example);
+    ObjectWidget().draw(g_base_class_example);
     ImGui::End();
 
     ImGui::Begin("Test Auto UI Functions Generation");
-    Widgets::draw_object(g_functions_example);
+    ObjectWidget().draw(g_functions_example);
     ImGui::End();
 }
 
