@@ -53,6 +53,8 @@ private:
 
     std::vector<std::uint8_t> is_dir_;
     std::vector<double>       dir_val_;
+
+    const FEMMesh::EdgeBC* find_edge_bc(int v1, int v2) const;
 };
 
 } // namespace fem

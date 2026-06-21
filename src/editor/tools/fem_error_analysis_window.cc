@@ -4,6 +4,7 @@
 #include "math/pde/pde_component.h"
 #include "math/pde/pde_presets.h"
 #include "geom/delaunay_types.h"
+#include "geom/geometry_2d.h"
 
 #include <imgui/imgui.h>
 #include <cmath>
@@ -419,8 +420,12 @@ bool FEMErrorAnalysisWindow::selection_point_(
         if ((size_t)T.v[0] >= R.points.size() || 
             (size_t)T.v[1] >= R.points.size() || 
             (size_t)T.v[2] >= R.points.size()) return false;
-        x = (R.points[T.v[0]].x() + R.points[T.v[1]].x() + R.points[T.v[2]].x()) / 3.0;
-        y = (R.points[T.v[0]].y() + R.points[T.v[1]].y() + R.points[T.v[2]].y()) / 3.0;
+
+        glm::dvec2 c = Geometry2D::tri_centroid(R.points[T.v[0]], R.points[T.v[1]], R.points[T.v[2]]);
+
+        x = c.x;
+        y = c.y;
+        
         return true;
     }
 

@@ -5,8 +5,6 @@
 #include "log_categories.h"
 
 #include <imgui/imgui.h>
-#include <random>
-#include <algorithm>
 
 namespace fem {
 
@@ -43,52 +41,6 @@ PlanarMeshGeneratorWindow::PlanarMeshGeneratorWindow() {
 }
 
 void PlanarMeshGeneratorWindow::draw(const PlanarMeshGeneratorWindowDrawInfo& draw_info) {
-}
-
-static inline double cross(const Point2D& o, const Point2D& a, const Point2D& b) {
-    return (a.x() - o.x())*(b.y() - o.y()) - (a.y() - o.y())*(b.x() - o.x());
-}
-static inline bool lessXY(const Point2D& a, const Point2D& b) {
-    if (a.x() != b.x()) return a.x() < b.x();
-    return a.y() < b.y();
-}
-static inline bool eqXY(const Point2D& a, const Point2D& b) {
-    return std::abs(a.x() - b.x()) < 1e-12 && std::abs(a.y() - b.y()) < 1e-12;
-}
-
-std::vector<Point2D> PlanarMeshGeneratorWindow::compute_convex_hull(std::vector<Point2D> pts) {
-    if (pts.size() < 3) return pts;
-
-    // sort + dedupe
-    std::sort(pts.begin(), pts.end(), lessXY);
-    pts.erase(std::unique(pts.begin(), pts.end(), eqXY), pts.end());
-    if (pts.size() < 3) return pts;
-
-    std::vector<Point2D> H;
-    H.reserve(pts.size()*2);
-
-    for (const auto& p : pts) {
-        while (H.size() >= 2 && cross(H[H.size()-2], H.back(), p) <= 0) H.pop_back();
-        H.push_back(p);
-    }
-    size_t lower_sz = H.size();
-    for (int i = (int)pts.size()-2; i >= 0; --i) {
-        const auto& p = pts[i];
-        while (H.size() > lower_sz && cross(H[H.size()-2], H.back(), p) <= 0) H.pop_back();
-        H.push_back(p);
-    }
-    if (!H.empty()) H.pop_back();
-
-    double area2 = 0.0;
-    for (size_t i=0;i<H.size();++i) {
-        const auto& a = H[i];
-        const auto& b = H[(i+1)%H.size()];
-        area2 += a.x()*b.y() - a.y()*b.x();
-    }
-    if (area2 < 0) std::reverse(H.begin(), H.end());
-
-    for (size_t i=0;i<H.size();++i) { H[i].id = (int)i; H[i].on_boundary = true; }
-    return H;
 }
 
 void PlanarMeshGeneratorWindow::send_triangulation_request(const PlanarMeshGeneratorWindowDrawInfo& draw_info) {

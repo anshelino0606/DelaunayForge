@@ -9,7 +9,6 @@
 #include "object_property_widget.h"
 #include "struct_property_widget.h"
 #include "enum_property_widget.h"
-#include "log_categories.h"
 
 namespace fem {
 

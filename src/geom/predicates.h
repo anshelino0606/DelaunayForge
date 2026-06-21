@@ -1,6 +1,7 @@
 #ifndef FEM_ENGINE_PREDICATES_H
 #define FEM_ENGINE_PREDICATES_H
 
+#include "geometry_2d.h"
 #include <glm/glm.hpp>
 #include <limits>
 #include <cmath>
@@ -104,7 +105,7 @@ static inline glm::dvec2 circumcenter(const glm::dvec2& A,
     glm::dvec2 a = B - A, b = C - A;
     double aa = glm::dot(a,a), bb = glm::dot(b,b);
     double d  = 2.0 * (a.x*b.y - a.y*b.x);
-    if (std::abs(d) < 1e-20) return (A+B+C) / 3.0; // fallback
+    if (std::abs(d) < 1e-20) return Geometry2D::tri_centroid(A, B, C); // fallback
     glm::dvec2 u((bb*a.y - aa*b.y)/d, (aa*b.x - bb*a.x)/d);
     return A + u;
 }

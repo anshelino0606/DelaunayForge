@@ -1,4 +1,6 @@
 #include "delaunay2d.h"
+#include "log_categories.h"
+#include "geometry_2d.h"
 #include <algorithm>
 #include <unordered_map>
 #include <fstream>
@@ -6,7 +8,6 @@
 #include <iostream>
 #include <numeric>
 #include <chrono>
-#include "log_categories.h"
 #include <span>
 
 
@@ -882,9 +883,8 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
                 const auto& A = points[t.v[0]];
                 const auto& B = points[t.v[1]];
                 const auto& C = points[t.v[2]];
-                const double cx = (A.x() + B.x() + C.x()) / 3.0;
-                const double cy = (A.y() + B.y() + C.y()) / 3.0;
-                if (!is_inside_active_domain(cx, cy)) continue;
+                glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+                if (!is_inside_active_domain(c.x, c.y)) continue;
             }
 
             double a0 = compute_triangle_angle(t,0);
@@ -986,14 +986,6 @@ bool DelaunayTriangulator::flip_edge(int tri1, int tri2, const Edge& edge) {
     t2 = Tri(v1, v2, edge.b, t2.id);
 
     return true;
-}
-
-Point2D DelaunayTriangulator::compute_triangle_centroid(const Tri& tri) const {
-    const Point2D& p1 = points[tri.v[0]];
-    const Point2D& p2 = points[tri.v[1]];
-    const Point2D& p3 = points[tri.v[2]];
-    
-    return Point2D((p1.x() + p2.x() + p3.x()) / 3.0, (p1.y() + p2.y() + p3.y()) / 3.0);
 }
 
 double DelaunayTriangulator::compute_triangle_angle(const Tri& tri, int vertex_idx) const {
@@ -1216,9 +1208,8 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
             const auto& A = R.points[t.v[0]];
             const auto& B = R.points[t.v[1]];
             const auto& C = R.points[t.v[2]];
-            double cx = (A.x() + B.x() + C.x()) / 3.0;
-            double cy = (A.y() + B.y() + C.y()) / 3.0;
-            if (pointInPoly(R.points, poly_idx, cx, cy))
+            glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+            if (pointInPoly(R.points, poly_idx, c.x, c.y))
                 kept.push_back(t);
         }
         R.triangles.swap(kept);
@@ -1623,21 +1614,19 @@ DelaunayTriangulator::triangulate_with_boundaries(
             const auto& B = R.points[t.v[1]];
             const auto& C = R.points[t.v[2]];
 
-            const double cx = (A.x() + B.x() + C.x()) / 3.0;
-            const double cy = (A.y() + B.y() + C.y()) / 3.0;
-
-            if (!inside_outer(cx, cy)) continue;
+            const glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+            if (!inside_outer(c.x, c.y)) continue;
 
             bool in_hole = false;
             for (std::size_t hi = 0; hi < holes_info.size(); ++hi) {
                 const auto& hole = holes_info[hi];
                 if (!hole.segs.empty()) {
-                    if (cx < hole.xmin || cx > hole.xmax) continue;
-                    if (cy < hole.ymin || cy > hole.ymax) continue;
+                    if (c.x < hole.xmin || c.x > hole.xmax) continue;
+                    if (c.y < hole.ymin || c.y > hole.ymax) continue;
                 }
                 const std::size_t loop_h = hi + 1;
                 if (loop_h < loop_idx.size() && loop_idx[loop_h].size() >= 3) {
-                    if (pointInPoly(R.points, loop_idx[loop_h], cx, cy)) { in_hole = true; break; }
+                    if (pointInPoly(R.points, loop_idx[loop_h], c.x, c.y)) { in_hole = true; break; }
                 }
             }
             if (in_hole) continue;

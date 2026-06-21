@@ -53,8 +53,6 @@ private:
     PlanarTriangulationSessionConfig triangulation_session_config_;\
     ParametricCurveTool parametric_tool_;
 
-    std::vector<Point2D> compute_convex_hull(std::vector<Point2D> pts);
-
     void send_triangulation_request(const PlanarMeshGeneratorWindowDrawInfo& draw_info);
 
     void draw_parametric_controls(const PlanarMeshGeneratorWindowDrawInfo& draw_info);

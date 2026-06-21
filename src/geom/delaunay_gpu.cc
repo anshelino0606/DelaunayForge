@@ -6,6 +6,7 @@
 #include <cmath>
 #include <algorithm>
 #include "math/density_functions.h"
+#include "geom/geometry_2d.h"
 #include <iostream>
 #include "log_categories.h"
 
@@ -411,15 +412,14 @@ DelaunayTriangulationResult GPUDelaunayTriangulator::triangulate_with_boundaries
             const auto& A = R.points[t.v[0]];
             const auto& B = R.points[t.v[1]];
             const auto& C = R.points[t.v[2]];
-            double cx = (A.x() + B.x() + C.x()) / 3.0;
-            double cy = (A.y() + B.y() + C.y()) / 3.0;
 
-            if (!inside_outer(cx, cy)) continue;
+            glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+            if (!inside_outer(c.x, c.y)) continue;
 
             bool in_hole = false;
             for (size_t h = 1; h < loop_idx.size(); ++h) {
                 if (loop_idx[h].size() < 3) continue;
-                if (inside_loop(loop_idx[h], cx, cy)) {
+                if (inside_loop(loop_idx[h], c.x, c.y)) {
                     in_hole = true;
                     break;
                 }

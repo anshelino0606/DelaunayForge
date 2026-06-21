@@ -248,7 +248,6 @@ private:
     
     void clip_to_polygon(const std::vector<Point2D>& polygon);
     bool point_in_polygon(const Point2D& point, const std::vector<Point2D>& polygon) const;
-    Point2D compute_triangle_centroid(const Tri& tri) const;
 
     bool edge_exists(int a, int b) const;
     Edge find_first_intersecting_edge(int a, int b) const;
