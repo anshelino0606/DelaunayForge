@@ -4,10 +4,10 @@
 
 namespace fem {
 
-template<typename OwnerType>
-class BoolPropertyWidget : public BasePropertyWidget<OwnerType> {
+template<typename OwnerType_>
+class BoolPropertyWidget : public BasePropertyWidget<OwnerType_> {
 public:
-    DEFINE_PROPERTY_WIDGET(BoolPropertyWidget, BasePropertyWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(BoolPropertyWidget, BasePropertyWidget<OwnerType_>);
 
     bool draw() {
         if (!this->pre_draw()) 

@@ -1,14 +1,15 @@
 #pragma once
 
 #include "base_member_widget.h"
-#include "widget.h"
+#include "widget_internal.h"
 #include "log_categories.h"
 
 namespace fem {
 
-template<typename OwnerType>
-class ArrayPropertyWidget : public BaseMemberWidget<ArrayProperty, OwnerType> {
+template<typename OwnerType_>
+class ArrayPropertyWidget : public BaseMemberWidget<ArrayProperty, OwnerType_> {
 public:
+    using OwnerType = OwnerType_;
     using Base = BaseMemberWidget<ArrayProperty, OwnerType>;
     
     ArrayPropertyWidget(ArrayProperty* property, OwnerType* owner, const StructTypeInfo* owner_type_info)

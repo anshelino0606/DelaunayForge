@@ -1,14 +1,14 @@
 #pragma once
 
 #include "base_type_widget.h"
-#include "widget.h"
+#include "widget_internal.h"
 
 namespace fem {
 
-template<typename OwnerType>
-class ObjectPropertyWidget : public BaseTypeWidget<OwnerType> {
+template<typename OwnerType_>
+class ObjectPropertyWidget : public BaseTypeWidget<OwnerType_> {
 public:
-    DEFINE_PROPERTY_WIDGET(ObjectPropertyWidget, BaseTypeWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(ObjectPropertyWidget, BaseTypeWidget<OwnerType_>);
 
     bool draw() {
         if (!this->pre_draw())

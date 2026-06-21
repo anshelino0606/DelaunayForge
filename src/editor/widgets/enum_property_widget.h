@@ -4,10 +4,10 @@
 
 namespace fem {
 
-template<typename OwnerType>
-class EnumPropertyWidget : public BaseTypeWidget<OwnerType> {
+template<typename OwnerType_>
+class EnumPropertyWidget : public BaseTypeWidget<OwnerType_> {
 public:
-    DEFINE_PROPERTY_WIDGET(EnumPropertyWidget, BaseTypeWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(EnumPropertyWidget, BaseTypeWidget<OwnerType_>);
 
     bool draw() {
         if (!init_internal())

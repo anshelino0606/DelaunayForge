@@ -5,10 +5,10 @@
 
 namespace fem {
 
-template<typename ScalarType, typename OwnerType>
-class ScalarPropertyWidget : public BasePropertyWidget<OwnerType> {
+template<typename ScalarType, typename OwnerType_>
+class ScalarPropertyWidget : public BasePropertyWidget<OwnerType_> {
 public:
-    DEFINE_PROPERTY_WIDGET(ScalarPropertyWidget, BasePropertyWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(ScalarPropertyWidget, BasePropertyWidget<OwnerType_>);
 
     bool draw() {
         if (!init_internal())

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base_widget.h"
-#include "widget.h"
+#include "widget_internal.h"
 #include "core/object/object.h"
 #include <imgui.h>
 

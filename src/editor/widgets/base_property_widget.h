@@ -4,9 +4,10 @@
 
 namespace fem {
 
-template<typename OwnerType>
-class BasePropertyWidget : public BaseMemberWidget<Property, OwnerType> {
+template<typename OwnerType_>
+class BasePropertyWidget : public BaseMemberWidget<Property, OwnerType_> {
 protected:
+    using OwnerType = OwnerType_;
     using Base = BaseMemberWidget<Property, OwnerType>;
 
     BasePropertyWidget(Property* property, OwnerType* owner, const StructTypeInfo* owner_type_info)
@@ -18,8 +19,9 @@ protected:
     }
 };
 
-#define DEFINE_PROPERTY_WIDGET(WidgetType, WidgetBaseType) \
-    WidgetType(Property* property, OwnerType* owner, const StructTypeInfo* owner_type_info) : \
+#define DEFINE_PROPERTY_WIDGET(WidgetType, WidgetBaseType)                                      \
+    using OwnerType = OwnerType_;                                                               \
+    WidgetType(Property* property, OwnerType* owner, const StructTypeInfo* owner_type_info) :   \
         WidgetBaseType(property, owner, owner_type_info) {}
 
 }

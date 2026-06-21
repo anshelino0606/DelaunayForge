@@ -4,10 +4,10 @@
 
 namespace fem {
 
-template<typename OwnerType>
-class BaseTypeWidget : public BasePropertyWidget<OwnerType> {
+template<typename OwnerType_>
+class BaseTypeWidget : public BasePropertyWidget<OwnerType_> {
 protected:
-    DEFINE_PROPERTY_WIDGET(BaseTypeWidget, BasePropertyWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(BaseTypeWidget, BasePropertyWidget<OwnerType_>);
 
     bool draw_type_header() {
         std::string label = this->get_member_label();

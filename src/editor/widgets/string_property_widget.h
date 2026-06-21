@@ -5,10 +5,10 @@
 
 namespace fem {
 
-template<typename OwnerType>
-class StringPropertyWidget : public BasePropertyWidget<OwnerType> {
+template<typename OwnerType_>
+class StringPropertyWidget : public BasePropertyWidget<OwnerType_> {
 public:
-    DEFINE_PROPERTY_WIDGET(StringPropertyWidget, BasePropertyWidget<OwnerType>);
+    DEFINE_PROPERTY_WIDGET(StringPropertyWidget, BasePropertyWidget<OwnerType_>);
 
     bool draw() {
         if (!this->pre_draw())
