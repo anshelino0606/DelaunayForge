@@ -2,8 +2,10 @@
 #define FEM_OPERATOR
 
 #include <functional>
+#include <variant>
 #include "fem_problem.h"
 #include "fem_assembler.h"
+#include "fem_operator_dispatch.h"
 
 namespace fem {
 
@@ -16,7 +18,7 @@ template<class Real>
 struct FractionalDenseP1 {
     FractionalEquationConfig cfg;
     FEMSystem build(const FEMProblem& P) const {
-        return assemble_fractional_laplacian_P1(P, (double)cfg.s, (double)cfg.scale);
+        return assemble_operator_P1(P, make_operator_spec(cfg));
     }
 };
 

@@ -10,6 +10,9 @@
 #include "fem_fractional_spectral_p1.h"
 #include "fem_assembler_generic.h"
 #include "fem_integrators.h"
+#include "fem_fractional_nonlocal.h"
+#include "fem_solve_pipeline.h"
+#include "fem_operator_dispatch.h"
 
 namespace fem {
 
@@ -118,55 +121,52 @@ FEMSystem assemble_fractional_laplacian_P1(const FEMProblem& P,
                                            double s,
                                            double C_scale = 1.0)
 {
+    return assemble_fractional_integral_laplacian_P1(P, FractionalIntegralSpec{s, C_scale});
+}
+
+static FEMSystem assemble_fractional_kernel_P1(
+    const FEMProblem& P,
+    double s,
+    double scale,
+    bool include_exterior_tail
+) {
     const FEMMesh& M = *P.mesh;
     const int N = M.dof_count();
 
-    // 1) nodal patch "masses" m_i = sum_E area(E)/3
-    std::vector<double> m(N, 0.0);
-    for (const auto& E : M.elems) {
-        const double share = E.area / 3.0;
-        m[E.v[0]] += share;
-        m[E.v[1]] += share;
-        m[E.v[2]] += share;
-    }
+    std::vector<double> m = build_fractional_nodal_mass(M);
 
-    // Step 2: Assemble RHS: b_i ≈ f(x_i,y_i) * m_i
     std::vector<double> b(N);
     for (int i = 0; i < N; ++i) {
         const auto& Pn = M.nodes[i];
         b[i] = P.f(Pn.x, Pn.y) * m[i];
     }
 
-    // 3) Dense fractional stiffness in triplet form (O(N^2))
     std::vector<Triplet> T;
     T.reserve(4 * N * N);
-    const double s_exp = 1.0 + s;
 
     for (int i = 0; i < N; ++i) {
         const auto& Pi = M.nodes[i];
         for (int j = i + 1; j < N; ++j) {
             const auto& Pj = M.nodes[j];
 
-            const double dx = Pi.x - Pj.x;
-            const double dy = Pi.y - Pj.y;
-            const double r2 = dx * dx + dy * dy;
+            const double w = fractional_pair_weight(Pi, Pj, m[i], m[j], s, scale);
+            if (w == 0.0) [[unlikely]] continue;
 
-            if (r2 == 0.0) [[unlikely]] continue;  // Skip coincident nodes
-
-            const double denom = std::pow(r2, s_exp);           // |x_i-x_j|^{2+2s}
-            const double w = C_scale * m[i] * m[j] / denom;
-
-            // Off-diagonal entries (negative coupling)
             add_entry(T, i, j, -w);
             add_entry(T, j, i, -w);
 
-            // Diagonal compensation: ∑_j A_ij = 0 (zero row sum)
             add_entry(T, i, i, w);
             add_entry(T, j, j, w);
         }
     }
 
-    // 3b) Robin and Neumann boundary terms — same as classical integrators
+    if (include_exterior_tail) {
+        const auto exterior_diag = approximate_integral_exterior_diagonal(M, m, s, scale);
+        for (int i = 0; i < N; ++i) {
+            add_entry(T, i, i, exterior_diag[static_cast<size_t>(i)]);
+        }
+    }
+
     for (const auto& e : M.edges_bc) {
         if (e.type == BCType::None || e.type == BCType::Dirichlet) continue;
 
@@ -199,7 +199,6 @@ FEMSystem assemble_fractional_laplacian_P1(const FEMProblem& P,
         }
     }
 
-    // Step 4: Compress triplets → CRS format
     std::sort(T.begin(), T.end(), [](const Triplet& a, const Triplet& b) {
         return (a.r != b.r) ? (a.r < b.r) : (a.c < b.c);
     });
@@ -238,6 +237,59 @@ FEMSystem assemble_fractional_laplacian_P1(const FEMProblem& P,
     S.x.assign(N, 0.0);
 
     return S;
+}
+
+FEMSystem assemble_fractional_integral_laplacian_P1(
+    const FEMProblem& P,
+    const FractionalIntegralSpec& spec
+) {
+    return assemble_fractional_kernel_P1(P, static_cast<double>(spec.s), static_cast<double>(spec.scale), true);
+}
+
+FEMSystem assemble_fractional_regional_laplacian_P1(
+    const FEMProblem& P,
+    const FractionalRegionalSpec& spec
+) {
+    return assemble_fractional_kernel_P1(P, static_cast<double>(spec.s), static_cast<double>(spec.scale), false);
+}
+
+FEMSystem assemble_operator_P1(const FEMProblem& P, const OperatorSpec& op) {
+    return std::visit([&](const auto& spec) -> FEMSystem {
+        using T = std::decay_t<decltype(spec)>;
+        if constexpr (std::is_same_v<T, LocalEllipticSpec>) {
+            return assemble_poisson_P1(P);
+        } else if constexpr (std::is_same_v<T, FractionalIntegralSpec>) {
+            return assemble_fractional_integral_laplacian_P1(P, spec);
+        } else if constexpr (std::is_same_v<T, FractionalRegionalSpec>) {
+            return assemble_fractional_regional_laplacian_P1(P, spec);
+        } else if constexpr (std::is_same_v<T, FractionalSpectralSpec>) {
+            return assemble_poisson_P1(P);
+        }
+    }, op);
+}
+
+FEMSystem assemble_and_solve_operator_P1(
+    const FEMProblem& P,
+    const OperatorSpec& op,
+    DifferentialEquationSolution& out
+) {
+    FEMProblem local = P;
+    local.set_operator_spec(op);
+
+    if (std::holds_alternative<FractionalSpectralSpec>(op)) {
+        return assemble_and_solve_spectral_fractional_P1(local, out);
+    }
+
+    out.invalidate();
+    FEMSystem sys;
+    if (!local.mesh) return sys;
+
+    sys = assemble_operator_P1(local, op);
+    auto D = gather_dirichlet_set(*local.mesh);
+    apply_dirichlet_elimination(sys, *local.mesh, D);
+    solve_linear_system(sys);
+    fill_solution(sys, out);
+    return sys;
 }
 
 FEMSystem assemble_and_solve_spectral_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {

@@ -2,6 +2,7 @@
 #define FEM_PDE_PRESET_H
 
 #include "parameters/pde_rhs.h"
+#include "parameters/pde_fractional_operator.h"
 #include "core/object/object.h"
 #include "core/object/property.h"
 #include "core/macro.h"
@@ -10,13 +11,11 @@
 #include "math/fem/fem_builder.h"
 #include "math/fem/fem_assembler.h"
 #include "math/fem/field/fem_reference_provider.h"
+#include "math/differential_equation.h"
+#include "math/differential_equation_solution.h"
+#include "math/pde/solve_request.h"
 
 namespace fem {
-
-template<typename Real> struct DifferentialEquationT;
-using DifferentialEquation = DifferentialEquationT<double>;
-template<typename Real> struct DifferentialEquationSolutionT;
-using DifferentialEquationSolution = DifferentialEquationSolutionT<double>;
 
 struct FEMProblem;
 
@@ -73,6 +72,21 @@ public:
     virtual void apply(DifferentialEquation& equation) const {}
     virtual void for_each_parameter(const ForEachParameter& callback) const {}
 
+    [[nodiscard]] virtual OperatorSpec operator_spec([[maybe_unused]] const DifferentialEquation& equation) const {
+        OperatorSpec spec = LocalEllipticSpec{};
+        for_each_parameter([&](PDEParameter* parameter) {
+            if (const auto* fractional = dynamic_cast<const PDEParameters::FractionalOperator*>(parameter)) {
+                spec = fractional->operator_spec();
+            }
+        });
+        return spec;
+    }
+
+    [[nodiscard]] virtual SolveRequest make_solve_request(const DifferentialEquation& equation) const {
+        return SolveRequest{.model = PDEModel(equation), .operator_spec = operator_spec(equation), .discretization = {}};
+    }
+
+    // Legacy facade: existing project code keeps calling this name.
     [[nodiscard]] virtual FEMAssembler fem_assembler() const { return nullptr; }
 
     [[nodiscard]] static PDEPreset* default_preset();

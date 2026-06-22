@@ -16,10 +16,6 @@
 
 namespace fem {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  Helper: build a structured right-triangle mesh on [0,W] × [0,H]
-//  with nx × ny rectangles each split into 2 triangles.
-// ═══════════════════════════════════════════════════════════════════════════════
 static FEMMesh make_structured_mesh(int nx, int ny, double W, double H) {
     FEMMesh m;
     const int nNode = (nx+1)*(ny+1);
@@ -54,7 +50,6 @@ static FEMMesh make_structured_mesh(int nx, int ny, double W, double H) {
     return m;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
 //  Robin slab self-test
 //  -κ u''(x) = 0  on [0,L],  u(0) = uD0 (Dirichlet)
 //  ∂u/∂n + β u = g  at x = L  (Robin, outward n = +1)
@@ -63,7 +58,6 @@ static FEMMesh make_structured_mesh(int nx, int ny, double W, double H) {
 //
 //  The test uses a 2D strip [0,L]×[0,H] with two triangles.
 //  P1 FEM reproduces any linear exact solution to machine precision.
-// ═══════════════════════════════════════════════════════════════════════════════
 RobinSlabTestResult run_robin_slab_self_test() {
     RobinSlabTestResult res;
 

@@ -153,6 +153,16 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
 
         auto do_step = [&](double dt) {
             const double next_t = cached_sol.transient_time + dt;
+            auto make_problem = [&](double solve_time, std::span<const double> previous_state) {
+                DifferentialEquation equation;
+                equation.time = solve_time;
+                preset->apply(equation);
+
+                FEMProblem fem_problem(preset->make_solve_request(equation), &fem_mesh);
+                fem_problem.dt = dt;
+                fem_problem.u_prev = previous_state;
+                return fem_problem;
+            };
 
             if (is_wave_newmark) {
                 static constexpr double beta = fem::default_newmark.beta;
@@ -175,12 +185,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                     v_pred[idx] = v_n[idx] + v_coeff * a_n[idx];
                 }
 
-                FEMProblem fem_problem;
-                fem_problem.mesh = &fem_mesh;
-                fem_problem.time = next_t;
-                fem_problem.dt = dt;
-                fem_problem.u_prev = u_pred;
-                preset->apply(fem_problem);
+                FEMProblem fem_problem = make_problem(next_t, u_pred);
 
                 if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
                     assembler(fem_problem, cached_sol.solution);
@@ -211,13 +216,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
 
             } else {
                 const std::vector<double> u_prev = cached_sol.solution.solution_u;
-
-                FEMProblem fem_problem;
-                fem_problem.mesh = &fem_mesh;
-                fem_problem.time = next_t;
-                fem_problem.dt = dt;
-                fem_problem.u_prev = u_prev;
-                preset->apply(fem_problem);
+                FEMProblem fem_problem = make_problem(next_t, u_prev);
 
                 if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
                     assembler(fem_problem, cached_sol.solution);
@@ -249,12 +248,12 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
     cached_sol.invalidate();
 
     if (solution_method_ == DifferentialEquationSolutionMethod::FEM) [[likely]] {
-        FEMProblem fem_problem;
-        
         FEMMesh fem_mesh = target_mesh->build_fem_mesh();
-        fem_problem.mesh = &fem_mesh;
-        fem_problem.time = time_playback_enabled_ ? time_seconds_ : 0.0;
-        preset->apply(fem_problem);
+        DifferentialEquation equation;
+        equation.time = time_playback_enabled_ ? time_seconds_ : 0.0;
+        preset->apply(equation);
+
+        FEMProblem fem_problem(preset->make_solve_request(equation), &fem_mesh);
 
         if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
             assembler(fem_problem, cached_sol.solution);
@@ -498,11 +497,12 @@ void PDEComponent::fill_fem_problem(FEMProblem& prob) const noexcept {
         prob.a.set_constant(1.0);
         prob.c.set_constant(0.0);
         prob.f.set_constant(0.0);
-        prob.fractional.reset();
+        prob.set_operator_spec(LocalEllipticSpec{});
         return;
     }
 
     equation_preset_->apply(prob);
+    prob.set_operator_spec(equation_preset_->operator_spec(prob));
 }
 
 const IReferenceProvider* PDEComponent::reference_provider() const noexcept {

@@ -4,6 +4,7 @@
 #include "pde_parameter.h"
 #include "math/fractional_equation_config.h"
 #include "math/differential_equation.h"
+#include "math/pde/operator_spec.h"
 #include "core/object/object.h"
 #include "core/object/property.h"
 #include "core/macro.h"
@@ -19,8 +20,8 @@ public:
     FractionalOperator() = default;
     ~FractionalOperator() override = default;
 
-    void apply(DifferentialEquation& equation) const override {
-        equation.fractional = FractionalEquationConfig{
+    [[nodiscard]] FractionalEquationConfig config() const {
+        return FractionalEquationConfig{
             .s = s_,
             .scale = scale_,
             .eig_clip = eig_clip_,
@@ -28,6 +29,12 @@ public:
             .spectral_k = spectral_k_
         };
     }
+
+    [[nodiscard]] OperatorSpec operator_spec() const {
+        return make_operator_spec(config());
+    }
+
+    void apply([[maybe_unused]] DifferentialEquation& equation) const override {}
 
 private:
     double s_ = 0.5;               ///< Fractional order ∈ (0, 1)

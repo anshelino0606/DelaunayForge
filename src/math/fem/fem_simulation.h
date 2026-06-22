@@ -59,17 +59,15 @@ public:
     void compute(const DelaunayTriangulationResult& R) {
         mesh = build_fem_mesh(R);
 
-        fem::FEMProblem P;
-        P.mesh = &mesh;
-
-        P.a.set_constant(config.a);
-        P.c.set_constant(config.pde_preset == 2 ? config.c : 0.0);
+        SolveRequest request;
+        request.model.a.set_constant(config.a);
+        request.model.c.set_constant(config.pde_preset == 2 ? config.c : 0.0);
 
         if (config.rhs_kind == 0) {
-            P.f.set_constant(config.fconst);
+            request.model.f.set_constant(config.fconst);
         } else {
             const double A = config.A, kx = config.kx, ky = config.ky;
-            P.f.set_function([A, kx, ky](double x, double y) {
+            request.model.f.set_function([A, kx, ky](double x, double y) {
                 return A * std::sin(kx * x) * std::sin(ky * y);
             });
         }
@@ -77,19 +75,15 @@ public:
         // P.set_robin_newton(config.theta_over_eps, config.u_c);
 
         if (config.pde_preset == 3) {
-            fem::FractionalEquationConfig cfg{};
-            cfg.type  = fem::FractionalType::Integral;   // or Spectral / Regional
-            cfg.s     = config.frac_s;
-            cfg.scale = config.frac_scale;
-
-            // optional spectral knobs
-            // cfg.spectral_k = -1;
-            // cfg.eig_clip   = 0.0;
-
-            P.fractional = cfg;
+            request.operator_spec = FractionalIntegralSpec{
+                .s = config.frac_s,
+                .scale = config.frac_scale
+            };
         } else {
-            P.fractional.reset();
+            request.operator_spec = LocalEllipticSpec{};
         }
+
+        fem::FEMProblem P(request, &mesh);
 
         fem::DifferentialEquationSolution out;
         sys = fem::assemble_and_solve_auto_P1(P, out);

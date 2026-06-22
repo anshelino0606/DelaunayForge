@@ -10,6 +10,7 @@
 #include "fem_mesh.h"
 #include "fem_problem.h"
 #include "fem_error_analysis.h"
+#include "fem_fractional_nonlocal.h"
 #include "math/differential_equation.h"
 #include "geom/geometry_2d.h"
 
@@ -345,7 +346,8 @@ inline double compute_nonlocal_dirichlet_work(
     const FEMMesh& mesh,
     std::span<const double> u,
     double s,
-    double C_scale = 1.0
+    double C_scale = 1.0,
+    bool include_exterior_tail = false
 ) {
     const int N = mesh.dof_count();
     if ((int)u.size() != N) return 0.0;
@@ -360,15 +362,7 @@ inline double compute_nonlocal_dirichlet_work(
     }
 
     // Nodal masses
-    std::vector<double> m(N, 0.0);
-    for (const auto& E : mesh.elems) {
-        const double share = E.area / 3.0;
-        m[E.v[0]] += share;
-        m[E.v[1]] += share;
-        m[E.v[2]] += share;
-    }
-
-    const double s_exp = 1.0 + s;
+    std::vector<double> m = build_fractional_nodal_mass(mesh);
     double work = 0.0;
 
     for (int i = 0; i < N; ++i) {
@@ -376,13 +370,20 @@ inline double compute_nonlocal_dirichlet_work(
             const bool di = is_dir[i], dj = is_dir[j];
             if (di == dj) continue;  // both interior or both Dirichlet
 
-            const double dx = mesh.nodes[i].x - mesh.nodes[j].x;
-            const double dy = mesh.nodes[i].y - mesh.nodes[j].y;
-            const double r2 = dx * dx + dy * dy;
-            if (r2 == 0.0) [[unlikely]] continue;
+            const double wij = fractional_pair_weight(mesh.nodes[i], mesh.nodes[j], m[i], m[j], s, C_scale);
+            if (wij == 0.0) [[unlikely]] continue;
 
             const double du = u[i] - u[j];
-            work += C_scale * m[i] * m[j] * du * du / std::pow(r2, s_exp);
+            work += wij * du * du;
+        }
+    }
+
+    if (include_exterior_tail) {
+        const auto exterior_diag = approximate_integral_exterior_diagonal(mesh, m, s, C_scale);
+        for (int i = 0; i < N; ++i) {
+            if (is_dir[i]) {
+                work += exterior_diag[static_cast<size_t>(i)] * u[static_cast<size_t>(i)] * u[static_cast<size_t>(i)];
+            }
         }
     }
     return work;  // finalize_energy_metrics will apply the 1/2
@@ -392,34 +393,31 @@ inline double compute_fractional_bilinear_energy(
     const FEMMesh& mesh,
     std::span<const double> u,
     double s,
-    double C_scale = 1.0
+    double C_scale = 1.0,
+    bool include_exterior_tail = false
 ) {
     const int N = mesh.dof_count();
     if ((int)u.size() != N) return 0.0;
 
-    // nodal patch masses m_i = Σ_E area(E)/3
-    std::vector<double> m(N, 0.0);
-    for (const auto& E : mesh.elems) {
-        const double share = E.area / 3.0;
-        m[E.v[0]] += share;
-        m[E.v[1]] += share;
-        m[E.v[2]] += share;
-    }
-
-    const double s_exp = 1.0 + s;  // exponent for |x|^{2+2s}
+    std::vector<double> m = build_fractional_nodal_mass(mesh);
     double energy = 0.0;
 
     for (int i = 0; i < N; ++i) {
         const auto& Pi = mesh.nodes[i];
         const double ui = u[i];
         for (int j = i + 1; j < N; ++j) {
-            const double dx = Pi.x - mesh.nodes[j].x;
-            const double dy = Pi.y - mesh.nodes[j].y;
-            const double r2 = dx * dx + dy * dy;
-            if (r2 == 0.0) [[unlikely]] continue;
-
+            const double wij = fractional_pair_weight(Pi, mesh.nodes[j], m[i], m[j], s, C_scale);
+            if (wij == 0.0) [[unlikely]] continue;
             const double du = ui - u[j];
-            energy += C_scale * m[i] * m[j] * du * du / std::pow(r2, s_exp);
+            energy += wij * du * du;
+        }
+    }
+
+    if (include_exterior_tail) {
+        const auto exterior_diag = approximate_integral_exterior_diagonal(mesh, m, s, C_scale);
+        for (int i = 0; i < N; ++i) {
+            const double ui = u[static_cast<size_t>(i)];
+            energy += exterior_diag[static_cast<size_t>(i)] * ui * ui;
         }
     }
     return 0.5 * energy;

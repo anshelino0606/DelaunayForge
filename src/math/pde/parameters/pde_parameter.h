@@ -4,6 +4,7 @@
 #include "core/object/object.h"
 #include "core/object/property.h"
 #include "math/differential_equation.h"
+#include "math/math_.h"
 
 #include <cmath>
 
@@ -24,8 +25,7 @@ protected:
     double offset_        = 0.0;
 
     double calc_dynamic_value(double t, double value) const {
-        constexpr double two_pi = 6.28318530717958647692;
-        return value + offset_ + amplitude_ * std::sin(two_pi * frequency_hz_ * t + phase_rad_);
+        return value + offset_ + amplitude_ * std::sin(Math::two_pi * frequency_hz_ * t + phase_rad_);
     }
 };
 

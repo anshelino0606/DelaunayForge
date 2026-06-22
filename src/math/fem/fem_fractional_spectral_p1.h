@@ -236,9 +236,9 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
     out.invalidate();
     FEMSystem sys;
 
-    if (!P.mesh || !P.fractional) [[unlikely]] return sys;
-    const auto cfg = *P.fractional;
-    if (cfg.type != FractionalType::Spectral) [[unlikely]] return sys;
+    if (!P.mesh) [[unlikely]] return sys;
+    const auto* cfg = std::get_if<FractionalSpectralSpec>(&P.operator_spec());
+    if (!cfg) [[unlikely]] return sys;
 
     const FEMMesh& mesh = *P.mesh;
     const int N = mesh.dof_count();
@@ -304,14 +304,14 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
     GenSymEig ge = generalized_selfadjoint_eig_inplace(K_ff, M_ff);
 
     // Clip small eigenvalues
-    const double eig_clip_d = static_cast<double>(cfg.eig_clip);
+    const double eig_clip_d = static_cast<double>(cfg->eig_clip);
     std::ranges::for_each(ge.lambda, [eig_clip_d](double& lam) {
         if (lam < eig_clip_d) lam = 0.0;
     });
 
     // Modal truncation
     int use_k = n;
-    if (cfg.spectral_k > 0) use_k = std::min(use_k, cfg.spectral_k);
+    if (cfg->spectral_k > 0) use_k = std::min(use_k, cfg->spectral_k);
 
     // Use ge.Phi directly — no copy into a separate n×n matrix (saves n²)
     const DenseMat& Phi = ge.Phi;
@@ -337,17 +337,16 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
         }
         { std::vector<double>().swap(Mg); }  // free Mg
 
-        const double sf = static_cast<double>(cfg.scale);
+        const double sf = static_cast<double>(cfg->scale);
         for (int k = 0; k < use_k; ++k) {
             const double lam = ge.lambda[static_cast<size_t>(k)];
-            const double ds = (lam > 0.0) ? std::pow(lam, static_cast<double>(cfg.s)) : 0.0;
+            const double ds = (lam > 0.0) ? std::pow(lam, static_cast<double>(cfg->s)) : 0.0;
             b_hat[static_cast<size_t>(k)] -= sf * ds * alpha_g[static_cast<size_t>(k)];
         }
     }
 
-    // Build modal system: A_hat = scale·diag(λ^s) + Φ^T C_ff Φ
-    const double scale_factor = static_cast<double>(cfg.scale);
-    const double s_param = static_cast<double>(cfg.s);
+    const double scale_factor = static_cast<double>(cfg->scale);
+    const double s_param = static_cast<double>(cfg->s);
 
     std::vector<double> spectral_diag(static_cast<size_t>(use_k));
     for (int k = 0; k < use_k; ++k) {
