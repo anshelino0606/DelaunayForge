@@ -9,21 +9,21 @@ function(fem_collect_sources out_sources)
   )
 
   file(GLOB root_headers CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/*.hpp
   )
 
   file(GLOB imgui_sources CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/misc/cpp/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/misc/cpp/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_glfw.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends/imgui_impl_glfw.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/cpp/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/cpp/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends/imgui_impl_glfw.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends/imgui_impl_glfw.h
   )
 
   file(GLOB lz4_sources CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/lz4/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/lz4/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4/*.h
   )
 
   list(APPEND project_sources ${root_headers} ${imgui_sources} ${imgui_backend} ${lz4_sources} ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
@@ -47,8 +47,8 @@ function(fem_target_common_includes target)
     ${PROJECT_SOURCE_DIR}/src/math/fem
     ${PROJECT_SOURCE_DIR}/src/renderer
     ${PROJECT_SOURCE_DIR}/src/rhi
-    ${PROJECT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/backends
+    ${PROJECT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends
   )
 endfunction()

@@ -6,7 +6,6 @@
 #define FEM_ENGINE_KEYBOARD_H
 
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 /*
