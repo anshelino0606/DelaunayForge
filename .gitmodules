@@ -1,4 +1,4 @@
-[submodule "include/imgui"]
-	path = include/imgui
+[submodule "third_party/imgui"]
+	path = third_party/imgui
 	url = https://github.com/JeFFlidan/imgui.git
 	branch = docking
