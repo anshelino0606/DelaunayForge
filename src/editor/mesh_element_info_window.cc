@@ -78,7 +78,7 @@ void MeshElementInfoWindow::draw(const DrawInfo& info) {
     prob.a.set_constant(1.0);
     prob.c.set_constant(0.0);
     prob.f.set_constant(0.0);
-    prob.fractional.reset();
+    prob.set_operator_spec(LocalEllipticSpec{});
 
     if (info.pde) info.pde->fill_fem_problem(prob);
 
@@ -197,18 +197,29 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
     ImGui::TextUnformatted("Local (P1) be = vol(f) + Neumann/Robin:");
     ImGui::Text("[% .3e  % .3e  % .3e]", be.x, be.y, be.z);
 
-    if (prob.fractional) {
-        const auto cfg = *prob.fractional;
+    const OperatorSpec& op = prob.operator_spec();
+    if (!std::holds_alternative<LocalEllipticSpec>(op)) {
         ImGui::Separator();
-        ImGui::Text("Fractional enabled: type=%u  s=%.6g  scale=%.6g",
-                    cfg.type.value, (double)cfg.s, (double)cfg.scale);
+        std::visit([&](const auto& spec) {
+            using T = std::decay_t<decltype(spec)>;
+            if constexpr (std::is_same_v<T, FractionalIntegralSpec>) {
+                ImGui::Text("Fractional enabled: Integral  s=%.6g  scale=%.6g",
+                            (double)spec.s, (double)spec.scale);
+            } else if constexpr (std::is_same_v<T, FractionalRegionalSpec>) {
+                ImGui::Text("Fractional enabled: Regional  s=%.6g  scale=%.6g",
+                            (double)spec.s, (double)spec.scale);
+            } else if constexpr (std::is_same_v<T, FractionalSpectralSpec>) {
+                ImGui::Text("Fractional enabled: Spectral  s=%.6g  scale=%.6g",
+                            (double)spec.s, (double)spec.scale);
+            }
+        }, op);
 
-        if (cfg.type == fem::FractionalType::Integral) {
-            FractionalIntegralOperator frac_integ_operator({v0, v1, v2});
-            frac_integ_operator.compute(cached_fem_, cfg, prob, nodal_mass_);
+        if (const auto* integral = std::get_if<FractionalIntegralSpec>(&op)) {
+            FractionalElementContribution frac_element({v0, v1, v2});
+            frac_element.compute(cached_fem_, *integral, prob, nodal_mass_);
 
-            const glm::dmat3& Af = frac_integ_operator.Af();
-            const glm::dvec3& bf = frac_integ_operator.bf();
+            const glm::dmat3& Af = frac_element.Af();
+            const glm::dvec3& bf = frac_element.bf();
 
             ImGui::TextUnformatted("Fractional (Integral) dense block Af on triangle vertices:");
             for (int i=0; i < 3; ++i) { 
@@ -218,8 +229,24 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
             ImGui::TextUnformatted("Fractional RHS nodal entries (b_i = f(x_i)*m_i) for these 3 verts:");
             ImGui::Text("[% .3e  % .3e  % .3e]", bf[0], bf[1], bf[2]);
 
-            ImGui::TextDisabled("Note: integral fractional operator is nonlocal; there is no true per-element Ke.");
-        } else if (cfg.type == fem::FractionalType::Spectral) {
+            ImGui::TextDisabled("Note: integral operator adds an exterior-interaction diagonal; there is no true per-element Ke.");
+        } else if (const auto* regional = std::get_if<FractionalRegionalSpec>(&op)) {
+            FractionalElementContribution frac_element({v0, v1, v2});
+            frac_element.compute(cached_fem_, *regional, prob, nodal_mass_);
+
+            const glm::dmat3& Af = frac_element.Af();
+            const glm::dvec3& bf = frac_element.bf();
+
+            ImGui::TextUnformatted("Fractional (Regional) in-domain block Af on triangle vertices:");
+            for (int i=0; i < 3; ++i) {
+                ImGui::Text("[% .3e  % .3e  % .3e]", Af[0][i], Af[1][i], Af[2][i]);
+            }
+
+            ImGui::TextUnformatted("Fractional RHS nodal entries (b_i = f(x_i)*m_i) for these 3 verts:");
+            ImGui::Text("[% .3e  % .3e  % .3e]", bf[0], bf[1], bf[2]);
+
+            ImGui::TextDisabled("Note: regional operator only includes in-domain interactions.");
+        } else if (std::holds_alternative<FractionalSpectralSpec>(op)) {
             ImGui::TextDisabled("Spectral: local K/M/C are meaningful; operator acts via eigenmodes (see spectral solver path).");
         } else {
             ImGui::TextDisabled("Regional/other: not shown here (define what matrix you want to inspect).");
