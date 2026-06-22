@@ -18,6 +18,12 @@ public:
         std::vector<uint8_t>& out_data,
         uint64_t compressed_data_offset = 0
     );
+
+    template <typename T>
+    requires std::is_enum_v<T>
+    [[nodiscard]] static constexpr std::underlying_type_t<T> to_index(T e) noexcept {
+        return static_cast<std::underlying_type_t<T>>(e);
+    }
 };
 
 }

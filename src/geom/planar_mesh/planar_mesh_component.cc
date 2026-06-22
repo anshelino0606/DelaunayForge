@@ -454,6 +454,8 @@ void PlanarMeshComponent::reset() {
     for (PlanarMeshInnerBoundary* inner_boundary : inner_boundaries_) {
         inner_boundary->clear_points();
     }
+
+    inner_boundaries_.clear();
 }
 
 void PlanarMeshComponent::set_edited_boundary(PlanarMeshBoundaryBase* boundary) {
