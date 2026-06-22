@@ -11,6 +11,7 @@
 #include "fem_problem.h"
 #include "fem_error_analysis.h"
 #include "math/differential_equation.h"
+#include "geom/geometry_2d.h"
 
 namespace fem {
 
@@ -313,10 +314,9 @@ inline double compute_classical_bilinear_energy(
             guy += u[(size_t)E.v[i]] * grad_phi[i][1];
         }
 
-        const double cx = (P0.x + P1.x + P2.x) / 3.0;
-        const double cy = (P0.y + P1.y + P2.y) / 3.0;
+        glm::dvec2 c = Geometry2D::tri_centroid(P0.x, P0.y, P1.x, P1.y, P2.x, P2.y);
 
-        energy += static_cast<double>(kappa(cx, cy)) * (gux*gux + guy*guy) * E.area;
+        energy += static_cast<double>(kappa(c.x, c.y)) * (gux*gux + guy*guy) * E.area;
     }
     return 0.5 * energy;
 }
