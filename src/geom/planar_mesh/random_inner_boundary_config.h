@@ -3,8 +3,8 @@
 
 #include "core/object/object.h"
 #include "core/object/property.h"
-#include "geom/fractal_domain_config.h"
-#include "geom/parametric_curve_config.h"
+#include "geom/configs/fractal_domain_config.h"
+#include "geom/configs/parametric_curve_config.h"
 
 namespace fem {
 

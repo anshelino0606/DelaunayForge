@@ -1,8 +1,8 @@
 #include "planar_mesh_boundary_base.h"
 #include "planar_mesh_component.h"
 #include "math/curve.h"
-#include "geom/parametric_curve_generator.h"
-#include "geom/fractal_domain_generator.h"
+#include "geom/generators/parametric_curve_generator.h"
+#include "geom/generators/fractal_domain_generator.h"
 #include "log_categories.h"
 
 namespace fem {

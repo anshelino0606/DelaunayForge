@@ -1,5 +1,5 @@
 #include "fractal_domain_generator.h"
-#include "fractal_domain_config.h"
+#include "geom/configs/fractal_domain_config.h"
 
 #include <algorithm>
 #include <cmath>

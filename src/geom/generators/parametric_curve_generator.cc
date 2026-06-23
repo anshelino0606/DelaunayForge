@@ -1,6 +1,6 @@
 #include "parametric_curve_generator.h"
 #include "math/expression_parser.h"
-#include "parametric_curve_config.h"
+#include "geom/configs/parametric_curve_config.h"
 #include "log_categories.h"
 
 namespace fem {
