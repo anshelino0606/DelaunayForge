@@ -4,7 +4,7 @@
 #include "math/pde/pde_component.h"
 #include "math/p1_element_2d.h"
 #include "math/fractional_integral_operator.h"
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/geometry_2d.h"
 
 #include <algorithm>

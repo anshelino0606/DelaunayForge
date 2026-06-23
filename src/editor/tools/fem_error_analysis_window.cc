@@ -3,7 +3,7 @@
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
 #include "math/pde/pde_presets.h"
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/geometry_2d.h"
 
 #include <imgui/imgui.h>

@@ -3,7 +3,7 @@
 
 #include "fem_mesh.h"
 
-#include "delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include <algorithm>
 #include <cmath>
 #include <functional>

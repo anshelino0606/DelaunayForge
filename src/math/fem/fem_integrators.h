@@ -2,7 +2,8 @@
 #define FEM_INTEGRATORS
 
 #include "fem_mesh.h"
-#include "fem_element_p1.h"
+#include "fem_problem.h"
+#include "fem_assembler.h"
 #include "math/differential_equation.h"
 #include "fem_quadrature.h"
 #include <vector>

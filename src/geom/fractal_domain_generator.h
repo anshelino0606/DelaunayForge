@@ -1,7 +1,7 @@
 #ifndef FEM_FRACTAL_DOMAIN_GENERATOR_H
 #define FEM_FRACTAL_DOMAIN_GENERATOR_H
 
-#include "delaunay_types.h"
+#include "geometry_2d.h"
 #include <glm/glm.hpp>
 #include <optional>
 #include <string>

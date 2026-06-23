@@ -2,7 +2,7 @@
 #define FEM_PLANAR_DELAUNAY_MESH_GENERATOR_H
 
 #include "planar_mesh_generator.h"
-#include "geom/triangulation_backend.h"
+#include "geom/triangulation/triangulation_backend.h"
 
 namespace fem {
 

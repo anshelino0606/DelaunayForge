@@ -1,8 +1,8 @@
 #ifndef DELAUNAY_MESH_GENERATOR_H
 #define DELAUNAY_MESH_GENERATOR_H
 
-#include "mesh_generator.h"
-#include "triangulation_backend.h"
+#include "geom/mesh/mesh_generator.h"
+#include "geom/triangulation/triangulation_backend.h"
 #include "delaunay_mesh_generator_config.h"
 #include <memory>
 #include <vector>

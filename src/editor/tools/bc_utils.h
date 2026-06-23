@@ -7,7 +7,7 @@
 #include <vector>
 #include <algorithm>
 
-#include "geom/delaunay2d.h"
+#include "geom/delaunay/delaunay2d.h"
 
 namespace fem::gui::bc {
 

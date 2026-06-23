@@ -9,13 +9,14 @@
 #include "viewport_3d_window.h"
 #include "main_menu_toolbar.h"
 #include "planar_mesh_generator_window.h"
-#include <glm/glm.hpp>
-#include <vector>
-#include "triangulation_session.h"
+#include "geom/triangulation/triangulation_session.h"
 #include "mesh_element_info_window.h"
 #include "tools/canvas_inspector.h"
 #include "tools/fem_error_analysis_window.h"
 #include "renderer/viewport_grid_settings.h"
+
+#include <glm/glm.hpp>
+#include <vector>
 
 namespace fem {
 

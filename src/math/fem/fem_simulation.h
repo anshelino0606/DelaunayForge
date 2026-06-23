@@ -14,12 +14,11 @@
 #include "fem_problem.h"
 #include "fem_assembler.h"
 #include "fem_mesh_builder.h"
-#include "geom/delaunay_mesh_generator.h"
+#include "geom/delaunay/delaunay_mesh_generator.h"
 #include "math/differential_equation.h"
 #include "math/differential_equation_solution.h"
 
 #include "fem_assemblers_p1.h"
-#include "fem_builders_p1.h"
 #include "fem_solve_pipeline.h"
 
 namespace fem {

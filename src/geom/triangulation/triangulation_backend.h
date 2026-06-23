@@ -1,10 +1,11 @@
 #ifndef TRIANGULATION_BACKEND_H
 #define TRIANGULATION_BACKEND_H
+
+#include "geom/delaunay/delaunay2d.h"
+#include "geom/delaunay/delaunay_gpu.h"
+
 #include <memory>
 #include <vector>
-#include "geom/delaunay2d.h"
-
-#include "delaunay_gpu.h"
 
 namespace fem {
 

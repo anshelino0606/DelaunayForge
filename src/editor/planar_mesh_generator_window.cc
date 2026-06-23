@@ -1,6 +1,6 @@
 #include "planar_mesh_generator_window.h"
 #include "canvas_window.h"
-#include "geom/triangulation_session_events.h"
+#include "geom/triangulation/triangulation_session_events.h"
 #include "geom/planar_mesh/planar_mesh_component.h"
 #include "log_categories.h"
 

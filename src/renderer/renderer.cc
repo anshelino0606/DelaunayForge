@@ -6,7 +6,7 @@
 #include "core/file_system/file_system.h"
 #include "editor/editor.h"
 #include "application/camera.h"
-#include "geom/mesh_component.h"
+#include "geom/mesh/mesh_component.h"
 #include "math/entities/math_entity.h"
 #include "math/pde/pde_component.h"
 

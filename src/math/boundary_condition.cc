@@ -1,6 +1,6 @@
 #include "boundary_condition.h"
 
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/planar_mesh/planar_mesh_component.h"
 #include "log_categories.h"
 #include "math/fem/bc_value.h"

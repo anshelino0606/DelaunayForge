@@ -6,7 +6,7 @@
 #include <vector>
 #include <functional>
 #include <glm/glm.hpp>
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include <algorithm>
 #include <cmath>
 #include "editor/viewport.h"

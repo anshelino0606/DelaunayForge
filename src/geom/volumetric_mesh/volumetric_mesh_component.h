@@ -1,7 +1,7 @@
 #ifndef FEM_VOLUMETRIC_MESH_COMPONENT_H
 #define FEM_VOLUMETRIC_MESH_COMPONENT_H
 
-#include "geom/mesh_component.h"
+#include "geom/mesh/mesh_component.h"
 
 namespace fem {
 

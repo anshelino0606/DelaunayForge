@@ -1,7 +1,7 @@
 #ifndef FEM_MESH_GENERATOR_H
 #define FEM_MESH_GENERATOR_H
 
-#include "geom/triangulation_session_config.h"
+#include "geom/triangulation/triangulation_session_config.h"
 #include "smooth_stroke_tool.h"
 #include "tools/parametric_curve.h"
 

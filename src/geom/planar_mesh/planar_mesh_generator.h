@@ -3,7 +3,7 @@
 
 #include "core/object/object.h"
 #include "core/object/property.h"
-#include "geom/mesh_generator_types.h"
+#include "geom/mesh/mesh_generator_types.h"
 
 namespace fem {
 

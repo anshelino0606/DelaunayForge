@@ -1,8 +1,8 @@
 #ifndef FEM_PLANAR_MESH_COMPONENT_H
 #define FEM_PLANAR_MESH_COMPONENT_H
 
-#include "geom/mesh_component.h"
-#include "geom/delaunay_types.h"
+#include "geom/mesh/mesh_component.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/planar_mesh/random_inner_boundary_config.h"
 #include "math/density_config.h"
 #include "math/density_functions.h"

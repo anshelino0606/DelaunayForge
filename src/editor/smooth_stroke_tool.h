@@ -1,6 +1,6 @@
 #pragma once
 
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/smooth_stroke_config.h"
 
 #include <vector>

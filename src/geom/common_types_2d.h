@@ -81,7 +81,7 @@ struct Point2D : public Struct {
     explicit operator glm::dvec2() const { return p; }
 
     bool operator<(const Point2D& other) const {
-        if (Math::equals(p.x, other.p.x)) {
+        if (!Math::equals(p.x, other.p.x)) {
             return p.x < other.p.x;
         }
         return p.y < other.p.y;

@@ -2,7 +2,7 @@
 #define FEM_RENDERER_H
 
 #include "common.h"
-#include "geom/delaunay_mesh_generator.h"
+#include "geom/delaunay/delaunay_mesh_generator.h"
 #include <functional>
 
 #include <imgui/imgui.h>
