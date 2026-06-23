@@ -24,14 +24,13 @@ FEM_DEFINE_PDE_PRESET(
 template<>
 bool evaluate_exact_solution<PDEPreset_Poisson>(double x, double y, double& u_exact,
                                                double* ux_exact, double* uy_exact) {
-    const double pi = M_PI;
-    u_exact = std::sin(pi * x) * std::sin(pi * y);
+    u_exact = std::sin(Math::PI * x) * std::sin(Math::PI * y);
     
     if (ux_exact) {
-        *ux_exact = pi * std::cos(pi * x) * std::sin(pi * y);
+        *ux_exact = Math::PI * std::cos(Math::PI * x) * std::sin(Math::PI);
     }
     if (uy_exact) {
-        *uy_exact = pi * std::sin(pi * x) * std::cos(pi * y);
+        *uy_exact = Math::PI * std::sin(Math::PI * x) * std::cos(Math::PI * y);
     }
     
     return true;

@@ -369,10 +369,10 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
 
 void DelaunayTriangulator::add_super_triangle() {
     // Find bounding box
-    double xmin = DOUBLE_MAX;
-    double xmax = DOUBLE_MIN;
-    double ymin = DOUBLE_MAX;
-    double ymax = DOUBLE_MIN;
+    double xmin = Math::DMAX;
+    double xmax = Math::DMIN;
+    double ymin = Math::DMAX;
+    double ymax = Math::DMIN;
     
     for (const auto& p : points) {
         xmin = std::min(xmin, p.x());
@@ -868,7 +868,6 @@ void DelaunayTriangulator::edge_flipping_pass() {
 }
 
 void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
-    const double min_rad = min_deg * M_PI / 180.0;
     int added = 0;
 
     for (;;) {
@@ -1006,7 +1005,7 @@ double DelaunayTriangulator::compute_triangle_angle(const Tri& tri, int vertex_i
     double cos_angle = dot / (mag_ab * mag_ac);
     cos_angle = std::max(-1.0, std::min(1.0, cos_angle)); // Clamp to valid range
     
-    return std::acos(cos_angle) * 180.0 / M_PI; // Convert to degrees
+    return glm::degrees(cos_angle);
 }
 
 void DelaunayTriangulator::compute_statistics(DelaunayTriangulationResult& result) const {

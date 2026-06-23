@@ -75,28 +75,27 @@ void PlanarMeshGeneratorWindow::draw_parametric_controls(const PlanarMeshGenerat
         cfg.preset = (ParametricPreset)preset_idx;
         
         // Set sensible defaults for each preset
-        const double pi = 3.14159265358979323846;
         switch (cfg.preset) {
             case ParametricPreset::Circle:
-                cfg.a = 100.0; cfg.t_start = 0.0; cfg.t_end = 2*pi;
+                cfg.a = 100.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
                 break;
             case ParametricPreset::Ellipse:
-                cfg.a = 150.0; cfg.b = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*pi;
+                cfg.a = 150.0; cfg.b = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
                 break;
             case ParametricPreset::Cardioid:
-                cfg.a = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*pi;
+                cfg.a = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
                 break;
             case ParametricPreset::Lemniscate:
-                cfg.a = 100.0; cfg.t_start = -pi; cfg.t_end = pi;
+                cfg.a = 100.0; cfg.t_start = -Math::PI; cfg.t_end = Math::PI;
                 break;
             case ParametricPreset::Epicycloid:
-                cfg.a = 100.0; cfg.b = 30.0; cfg.t_start = 0.0; cfg.t_end = 2*pi;
+                cfg.a = 100.0; cfg.b = 30.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
                 break;
             case ParametricPreset::Hypocycloid:
-                cfg.a = 120.0; cfg.b = 40.0; cfg.t_start = 0.0; cfg.t_end = 2*pi;
+                cfg.a = 120.0; cfg.b = 40.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
                 break;
             case ParametricPreset::Spiral:
-                cfg.a = 20.0; cfg.b = 5.0; cfg.t_start = 0.0; cfg.t_end = 6*pi;
+                cfg.a = 20.0; cfg.b = 5.0; cfg.t_start = 0.0; cfg.t_end = 6*Math::PI;
                 break;
             case ParametricPreset::Custom:
                 cfg.custom_x_expr = "a*cos(t)";
@@ -253,12 +252,12 @@ void PlanarMeshGeneratorWindow::draw_parametric_controls(const PlanarMeshGenerat
     }
     
     ImGui::Separator();
-    const double pi = 3.14159265358979323846;
+
     float t_start_f = (float)cfg.t_start;
     float t_end_f = (float)cfg.t_end;
     
-    params_changed |= ImGui::SliderFloat("t start", &t_start_f, -4.0f*(float)pi, 4.0f*(float)pi, "%.3f");
-    params_changed |= ImGui::SliderFloat("t end", &t_end_f, -4.0f*(float)pi, 8.0f*(float)pi, "%.3f");
+    params_changed |= ImGui::SliderFloat("t start", &t_start_f, -4.0f*(float)Math::F_PI, 4.0f*(float)Math::F_PI, "%.3f");
+    params_changed |= ImGui::SliderFloat("t end", &t_end_f, -4.0f*(float)Math::F_PI, 8.0f*(float)Math::F_PI, "%.3f");
     
     cfg.t_start = t_start_f;
     cfg.t_end = t_end_f;

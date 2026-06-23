@@ -175,10 +175,10 @@ inline double compute_dirichlet_boundary_work(
     }
 
     // Bounding box for outward-normal classification
-    double xmin =  DOUBLE_INF;
-    double xmax = -DOUBLE_INF;
-    double ymin =  DOUBLE_INF;
-    double ymax = -DOUBLE_INF;
+    double xmin =  Math::DINF;
+    double xmax = -Math::DINF;
+    double ymin =  Math::DINF;
+    double ymax = -Math::DINF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x); xmax = std::max(xmax, nd.x);
         ymin = std::min(ymin, nd.y); ymax = std::max(ymax, nd.y);
@@ -323,8 +323,8 @@ inline double compute_classical_bilinear_energy(
 }
 
 inline double mesh_bbox_width(const FEMMesh& mesh) {
-    double xmin =  DOUBLE_INF;
-    double xmax = -DOUBLE_INF;
+    double xmin =  Math::DINF;
+    double xmax = -Math::DINF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x);
         xmax = std::max(xmax, nd.x);
