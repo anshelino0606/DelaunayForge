@@ -231,7 +231,7 @@ DelaunayTriangulationResult GPUDelaunayTriangulator::triangulate_hybrid(
             glm::dvec2 b = points[new_tri.v[1]].p;
             glm::dvec2 c = points[new_tri.v[2]].p;
             
-            if (orient_sign(a, b, c) < 0) {
+            if (Geometry2D::orient_sign(a, b, c) < 0) {
                 std::swap(new_tri.v[0], new_tri.v[1]);
             }
             

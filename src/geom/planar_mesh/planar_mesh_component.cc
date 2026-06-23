@@ -3,6 +3,7 @@
 #include "planar_mesh_inner_boundary.h"
 #include "geom/fractal_domain_generator.h"
 #include "geom/parametric_curve_generator.h"
+#include "geom/geometry_2d.h"
 #include "math/boundary_condition.h"
 #include "math/fem/fem_mesh_builder.h"
 #include "math/pde/pde_component.h"
@@ -35,10 +36,6 @@ struct LoopBounds {
     }
 };
 
-[[nodiscard]] double orient2d(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c) {
-    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
 [[nodiscard]] int sign_eps(double value, double eps = kLoopValidationEps) {
     if (value > eps) return 1;
     if (value < -eps) return -1;
@@ -67,7 +64,7 @@ struct LoopBounds {
     const glm::dvec2& b,
     double eps = kLoopValidationEps
 ) {
-    if (std::abs(orient2d(a, b, p)) > eps) return false;
+    if (std::abs(Geometry2D::orient(a, b, p)) > eps) return false;
 
     const double xmin = std::min(a.x, b.x) - eps;
     const double xmax = std::max(a.x, b.x) + eps;
@@ -83,10 +80,10 @@ struct LoopBounds {
     const glm::dvec2& d,
     double eps = kLoopValidationEps
 ) {
-    const double o1 = orient2d(a, b, c);
-    const double o2 = orient2d(a, b, d);
-    const double o3 = orient2d(c, d, a);
-    const double o4 = orient2d(c, d, b);
+    const double o1 = Geometry2D::orient(a, b, c);
+    const double o2 = Geometry2D::orient(a, b, d);
+    const double o3 = Geometry2D::orient(c, d, a);
+    const double o4 = Geometry2D::orient(c, d, b);
 
     const int s1 = sign_eps(o1, eps);
     const int s2 = sign_eps(o2, eps);

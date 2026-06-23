@@ -431,13 +431,13 @@ std::vector<int> DelaunayTriangulator::find_bad_triangles(const Point2D& point) 
         glm::dvec2 c = points[tri.v[2]].p;
         
         // Ensure CCW orientation
-        if (orient_sign(a, b, c) < 0) {
+        if (Geometry2D::orient_sign(a, b, c) < 0) {
             std::swap(triangles[i].v[1], triangles[i].v[2]);
             b = points[triangles[i].v[1]].p;
             c = points[triangles[i].v[2]].p;
         }
         
-        if (inCircle_ccw(a, b, c, p, config.epsilon) > 0) {
+        if (Geometry2D::incircle_ccw(a, b, c, p, config.epsilon) > 0) {
             bad.push_back(static_cast<int>(i));
         }
     }
@@ -486,7 +486,7 @@ void DelaunayTriangulator::retriangulate_cavity(int point_idx, const std::vector
         glm::dvec2 b = points[new_tri.v[1]].p;
         glm::dvec2 c = points[new_tri.v[2]].p;
 
-        if (orient_sign(a, b, c) < 0) {
+        if (Geometry2D::orient_sign(a, b, c) < 0) {
             std::swap(new_tri.v[0], new_tri.v[1]);
         }
     }
@@ -805,7 +805,7 @@ void DelaunayTriangulator::lloyd_smoothing() {
                 glm::dvec2 C = points[tri.v[2]].p;
                 
                 // Get circumcenter of this triangle
-                glm::dvec2 circumcenter_pos = circumcenter(A, B, C);
+                glm::dvec2 circumcenter_pos = Geometry2D::circumcenter(A, B, C);
                 voronoi_vertices.push_back(circumcenter_pos);
             }
             
@@ -899,7 +899,7 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
         glm::dvec2 A = points[w.v[0]].p;
         glm::dvec2 B = points[w.v[1]].p;
         glm::dvec2 C = points[w.v[2]].p;
-        glm::dvec2 cc = circumcenter(A,B,C);
+        glm::dvec2 cc = Geometry2D::circumcenter(A,B,C);
 
         Point2D p(cc.x, cc.y, (int)points.size());
         p.on_boundary = false; // Steiner interior point
@@ -1051,7 +1051,7 @@ bool DelaunayTriangulator::validate_triangulation(const DelaunayTriangulationRes
         glm::dvec2 c = result.points[tri.v[2]].p;
         
         // Ensure CCW
-        if (orient_sign(a, b, c) <= 0) return false;
+        if (Geometry2D::orient_sign(a, b, c) <= 0) return false;
         
         // Check no other point lies inside circumcircle
         for (size_t i = 0; i < result.points.size(); ++i) {
@@ -1060,7 +1060,7 @@ bool DelaunayTriangulator::validate_triangulation(const DelaunayTriangulationRes
                 static_cast<int>(i) == tri.v[2]) continue;
             
             glm::dvec2 d = result.points[i].p;
-            if (inCircle_ccw(a, b, c, d, eps) > 0) return false;
+            if (Geometry2D::incircle_ccw(a, b, c, d, eps) > 0) return false;
         }
     }
     
@@ -1701,7 +1701,7 @@ bool DelaunayTriangulator::flip_edge_if_possible(int ea, int eb) {
         glm::dvec2 A = points[t.v[0]].p;
         glm::dvec2 B = points[t.v[1]].p;
         glm::dvec2 C = points[t.v[2]].p;
-        if (orient_sign(A, B, C) < 0) std::swap(t.v[1], t.v[2]);
+        if (Geometry2D::orient_sign(A, B, C) < 0) std::swap(t.v[1], t.v[2]);
     };
     fix_ccw(t1);
     fix_ccw(t2);
@@ -1869,10 +1869,10 @@ void DelaunayTriangulator::constrained_delaunay_flip_pass() {
             glm::dvec2 D = points[d].p;
 
             // Ensure (A,B,C) is CCW for incircle test
-            if (orient_sign(A, B, C) < 0) std::swap(B, C);
+            if (Geometry2D::orient_sign(A, B, C) < 0) std::swap(B, C);
 
             // If D is inside circumcircle of triangle ABC, edge (a,b) is illegal => flip
-            if (inCircle_ccw_scaled_strict(A, B, C, D) > 0) {
+            if (Geometry2D::incircle_ccw_scaled_strict(A, B, C, D) > 0) {
                 if (!flip_edge(ei.tri_left, ei.tri_right, Edge(a, b))) continue;
 
                 // fix orientation
@@ -1883,7 +1883,7 @@ void DelaunayTriangulator::constrained_delaunay_flip_pass() {
                     glm::dvec2 p0 = points[t.v[0]].p;
                     glm::dvec2 p1 = points[t.v[1]].p;
                     glm::dvec2 p2 = points[t.v[2]].p;
-                    if (orient_sign(p0, p1, p2) < 0) std::swap(t.v[1], t.v[2]);
+                    if (Geometry2D::orient_sign(p0, p1, p2) < 0) std::swap(t.v[1], t.v[2]);
                 };
                 fix_ccw(nL);
                 fix_ccw(nR);

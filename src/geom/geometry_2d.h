@@ -28,6 +28,22 @@ public:
     static double min_angle_deg(const Point2D& a, const Point2D& b, const Point2D& c);
 
     static double hypot(const Point2D& a, const Point2D& b);
+
+    // Robust orientation predicate with epsilon handling
+    static double orient(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c);
+
+    static int32_t orient_sign(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, double eps = 1e-15);
+
+    // Robust incircle predicate
+    static double incircle_val(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, const glm::dvec2& d);
+    static int32_t incircle_ccw_scaled_strict(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, const glm::dvec2& d);
+    static int32_t incircle_ccw(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, const glm::dvec2& d, double eps);
+    static glm::dvec2 circumcenter(const glm::dvec2& A, const glm::dvec2& B, const glm::dvec2& C);
+    static glm::dvec2 incenter(const glm::dvec2& A, const glm::dvec2& B, const glm::dvec2& C);
+    static bool is_obtuse(const glm::dvec2& A, const glm::dvec2& B, const glm::dvec2& C);
+
+    // move "t" toward incenter (0=cc, 1=ic). t works well in range [0.3, 0.5]
+    static glm::dvec2 offcenter(const glm::dvec2& cc, const glm::dvec2& ic, double t = 0.35);
 };
 
 }
