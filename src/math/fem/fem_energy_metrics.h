@@ -12,6 +12,7 @@
 #include "fem_error_analysis.h"
 #include "math/differential_equation.h"
 #include "geom/geometry_2d.h"
+#include "math/math_.h"
 
 namespace fem {
 
@@ -174,10 +175,10 @@ inline double compute_dirichlet_boundary_work(
     }
 
     // Bounding box for outward-normal classification
-    double xmin =  std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
-    double ymin =  std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
+    double xmin =  DOUBLE_INF;
+    double xmax = -DOUBLE_INF;
+    double ymin =  DOUBLE_INF;
+    double ymax = -DOUBLE_INF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x); xmax = std::max(xmax, nd.x);
         ymin = std::min(ymin, nd.y); ymax = std::max(ymax, nd.y);
@@ -322,8 +323,8 @@ inline double compute_classical_bilinear_energy(
 }
 
 inline double mesh_bbox_width(const FEMMesh& mesh) {
-    double xmin =  std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
+    double xmin =  DOUBLE_INF;
+    double xmax = -DOUBLE_INF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x);
         xmax = std::max(xmax, nd.x);

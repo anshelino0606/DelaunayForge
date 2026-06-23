@@ -26,10 +26,10 @@ namespace {
 constexpr double kLoopValidationEps = 1e-9;
 
 struct LoopBounds {
-    double xmin = std::numeric_limits<double>::max();
-    double xmax = std::numeric_limits<double>::lowest();
-    double ymin = std::numeric_limits<double>::max();
-    double ymax = std::numeric_limits<double>::lowest();
+    double xmin = DOUBLE_MAX;
+    double xmax = DOUBLE_MIN;
+    double ymin = DOUBLE_MAX;
+    double ymax = DOUBLE_MIN;
 
     [[nodiscard]] bool valid() const {
         return xmin <= xmax && ymin <= ymax;

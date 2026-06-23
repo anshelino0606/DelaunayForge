@@ -1,6 +1,7 @@
 #include "delaunay2d.h"
 #include "log_categories.h"
 #include "geometry_2d.h"
+#include "math/math_.h"
 #include <algorithm>
 #include <unordered_map>
 #include <fstream>
@@ -368,10 +369,10 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
 
 void DelaunayTriangulator::add_super_triangle() {
     // Find bounding box
-    double xmin = std::numeric_limits<double>::max();
-    double xmax = std::numeric_limits<double>::lowest();
-    double ymin = std::numeric_limits<double>::max();
-    double ymax = std::numeric_limits<double>::lowest();
+    double xmin = DOUBLE_MAX;
+    double xmax = DOUBLE_MIN;
+    double ymin = DOUBLE_MAX;
+    double ymax = DOUBLE_MIN;
     
     for (const auto& p : points) {
         xmin = std::min(xmin, p.x());

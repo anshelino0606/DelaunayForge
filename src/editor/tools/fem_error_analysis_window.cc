@@ -3,6 +3,7 @@
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
 #include "math/pde/pde_presets.h"
+#include "math/math_.h"
 #include "geom/delaunay/delaunay_types.h"
 #include "geom/geometry_2d.h"
 
@@ -1300,10 +1301,10 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
 
                 for (const auto& L : levels) {
                     auto e = compute_error_vs_reference<double>(L.mesh, L.u, ref_mesh, ref_u, &ref_loc);
-                    l2.push_back(e.valid ? e.l2 : std::numeric_limits<double>::quiet_NaN());
+                    l2.push_back(e.valid ? e.l2 : DOUBLE_NAN);
                     h1_full.push_back((e.valid && e.has_grad)
                         ? std::sqrt(e.l2 * e.l2 + e.h1_semi * e.h1_semi)
-                        : std::numeric_limits<double>::quiet_NaN());
+                        : DOUBLE_NAN);
                 }
 
                 LOGT_INFO(LogMath, "Aitken stress: computed L2/W1,2 vs ref for %zu levels", levels.size());
@@ -1313,20 +1314,20 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
                     const double li = l2[i];
                     const double hi = h1_full[i];
 
-                    double rate_l2 = std::numeric_limits<double>::quiet_NaN();
+                    double rate_l2 = DOUBLE_NAN;
                     if (i > 0 && std::isfinite(l2[i - 1]) && std::isfinite(li) && l2[i - 1] > 0.0 && li > 0.0) {
                         const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
                         if (std::abs(log_h) > 1e-12) rate_l2 = std::log(l2[i - 1] / li) / log_h;
                     }
 
-                    double rate_h1 = std::numeric_limits<double>::quiet_NaN();
+                    double rate_h1 = DOUBLE_NAN;
                     if (i > 0 && std::isfinite(h1_full[i - 1]) && std::isfinite(hi) && h1_full[i - 1] > 0.0 && hi > 0.0) {
                         const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
                         if (std::abs(log_h) > 1e-12) rate_h1 = std::log(h1_full[i - 1] / hi) / log_h;
                     }
 
-                    double ap_l2 = std::numeric_limits<double>::quiet_NaN();
-                    double ae_l2 = std::numeric_limits<double>::quiet_NaN();
+                    double ap_l2 = DOUBLE_NAN;
+                    double ae_l2 = DOUBLE_NAN;
                     if (i >= 2 && std::isfinite(l2[i - 2]) && std::isfinite(l2[i - 1]) && std::isfinite(li)) {
                         auto est = aitken_estimate_3<double>(l2[i - 2], l2[i - 1], li, levels[i - 2].h, levels[i - 1].h, L.h);
                         if (est.valid) {
@@ -1335,8 +1336,8 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
                         }
                     }
 
-                    double ap_h1 = std::numeric_limits<double>::quiet_NaN();
-                    double ae_h1 = std::numeric_limits<double>::quiet_NaN();
+                    double ap_h1 = DOUBLE_NAN;
+                    double ae_h1 = DOUBLE_NAN;
                     if (i >= 2 && std::isfinite(h1_full[i - 2]) && std::isfinite(h1_full[i - 1]) && std::isfinite(hi)) {
                         auto est = aitken_estimate_3<double>(h1_full[i - 2], h1_full[i - 1], hi, levels[i - 2].h, levels[i - 1].h, L.h);
                         if (est.valid) {

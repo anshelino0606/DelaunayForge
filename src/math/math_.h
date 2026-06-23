@@ -1,6 +1,13 @@
 #pragma once
 
+#include <limits>
+
 namespace fem {
+
+constexpr double DOUBLE_MIN = std::numeric_limits<double>::lowest();
+constexpr double DOUBLE_MAX = std::numeric_limits<double>::max();
+constexpr double DOUBLE_NAN = std::numeric_limits<double>::quiet_NaN();
+constexpr double DOUBLE_INF = std::numeric_limits<double>::infinity();
 
 class Math {
 public:
