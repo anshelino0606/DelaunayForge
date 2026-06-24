@@ -15,10 +15,10 @@ namespace fem {
 
 namespace {
 
-static inline std::uint64_t pack_edge(int a, int b) noexcept {
-    const auto lo = (std::uint32_t)std::min(a, b);
-    const auto hi = (std::uint32_t)std::max(a, b);
-    return ((std::uint64_t)lo << 32) | hi;
+static inline std::uint64_t pack_edge(Index a, Index b) noexcept {
+    const auto lo = std::min(a, b);
+    const auto hi = std::max(a, b);
+    return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
 }
 
 enum class Side : int { None=0, Left=1, Right=2, Bottom=3, Top=4 };
@@ -44,7 +44,7 @@ static void outward_normal(Side s, double& nx, double& ny) noexcept {
     }
 }
 
-struct TriInfo { int v0, v1, v2; };
+struct TriInfo { Index v0, v1, v2; bool boundary = true; };
 
 } // anon
 
@@ -60,7 +60,7 @@ BalanceMetrics compute_balance_metrics(
     out.dofs = mesh.dof_count();
     out.h    = mesh_h_max_edge<double>(mesh);
 
-    if ((int)u.size() != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
+    if (to_count(u.size()) != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
         return out;
 
     out.xmin = out.ymin =  std::numeric_limits<double>::infinity();
@@ -77,24 +77,24 @@ BalanceMetrics compute_balance_metrics(
 
     std::unordered_map<std::uint64_t, TriInfo> adj;
     adj.reserve(mesh.elems.size() * 3);
-    for (int ti = 0; ti < (int)mesh.elems.size(); ++ti) {
-        const auto& E = mesh.elems[(size_t)ti];
+    for (std::size_t ti = 0; ti < mesh.elems.size(); ++ti) {
+        const auto& E = mesh.elems[ti];
         for (int e = 0; e < 3; ++e) {
             auto key = pack_edge(E.v[e], E.v[(e+1)%3]);
             auto it = adj.find(key);
             if (it == adj.end())
-                adj.emplace(key, TriInfo{E.v[0], E.v[1], E.v[2]});
+                adj.emplace(key, TriInfo{E.v[0], E.v[1], E.v[2], true});
             else
-                it->second = TriInfo{-1,-1,-1}; // interior
+                it->second.boundary = false; // interior
         }
     }
 
     double area = 0, int_f = 0, int_cu = 0;
     for (const auto& E : mesh.elems) {
-        const auto& P0 = mesh.nodes[(size_t)E.v[0]];
-        const auto& P1 = mesh.nodes[(size_t)E.v[1]];
-        const auto& P2 = mesh.nodes[(size_t)E.v[2]];
-        const double u0 = u[(size_t)E.v[0]], u1 = u[(size_t)E.v[1]], u2 = u[(size_t)E.v[2]];
+        const auto& P0 = mesh.nodes[to_size(E.v[0])];
+        const auto& P1 = mesh.nodes[to_size(E.v[1])];
+        const auto& P2 = mesh.nodes[to_size(E.v[2])];
+        const double u0 = u[to_size(E.v[0])], u1 = u[to_size(E.v[1])], u2 = u[to_size(E.v[2])];
         area += E.area;
         for (int q = 0; q < TriQuad3::n; ++q) {
             const double L0 = TriQuad3::l1[q], L1 = TriQuad3::l2[q], L2 = TriQuad3::l3[q];
@@ -112,16 +112,16 @@ BalanceMetrics compute_balance_metrics(
 
     double fl=0, fr=0, fb=0, ft=0, qi=0, il=0;
     for (const auto& e : mesh.edges_bc) {
-        if (e.a < 0 || e.b < 0) continue;
-        if ((size_t)e.a >= mesh.nodes.size() || (size_t)e.b >= mesh.nodes.size()) continue;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
+        
 
-        const auto& A = mesh.nodes[(size_t)e.a];
-        const auto& B = mesh.nodes[(size_t)e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const double L = std::hypot(B.x-A.x, B.y-A.y);
         if (!(L > 0.0)) continue;
 
         const double mx = 0.5*(A.x+B.x), my = 0.5*(A.y+B.y);
-        const double uavg = 0.5*(u[(size_t)e.a] + u[(size_t)e.b]);
+        const double uavg = 0.5*(u[to_size(e.a)] + u[to_size(e.b)]);
 
         const Side side = classify_side(A.x,A.y, B.x,B.y,
                                         out.xmin,out.xmax, out.ymin,out.ymax, tol);
@@ -137,20 +137,20 @@ BalanceMetrics compute_balance_metrics(
             // Dirichlet: reconstruct from element gradient
             auto key = pack_edge(e.a, e.b);
             auto it = adj.find(key);
-            if (it == adj.end() || it->second.v0 < 0) continue;
+            if (it == adj.end() || !it->second.boundary) continue;
 
-            const int v0 = it->second.v0, v1 = it->second.v1, v2 = it->second.v2;
-            if ((size_t)v0>=mesh.nodes.size()||(size_t)v1>=mesh.nodes.size()||(size_t)v2>=mesh.nodes.size())
+            const Index v0 = it->second.v0, v1 = it->second.v1, v2 = it->second.v2;
+            if (!is_valid(v0, mesh.nodes.size()) || !is_valid(v1, mesh.nodes.size()) || !is_valid(v2, mesh.nodes.size()))
                 continue;
 
-            const auto& PP0 = mesh.nodes[(size_t)v0];
-            const auto& PP1 = mesh.nodes[(size_t)v1];
-            const auto& PP2 = mesh.nodes[(size_t)v2];
+            const auto& PP0 = mesh.nodes[to_size(v0)];
+            const auto& PP1 = mesh.nodes[to_size(v1)];
+            const auto& PP2 = mesh.nodes[to_size(v2)];
             double grad_phi[3][2];
             compute_p1_gradients<double>(PP0.x,PP0.y, PP1.x,PP1.y, PP2.x,PP2.y, grad_phi);
 
-            const double gux = u[(size_t)v0]*grad_phi[0][0] + u[(size_t)v1]*grad_phi[1][0] + u[(size_t)v2]*grad_phi[2][0];
-            const double guy = u[(size_t)v0]*grad_phi[0][1] + u[(size_t)v1]*grad_phi[1][1] + u[(size_t)v2]*grad_phi[2][1];
+            const double gux = u[to_size(v0)]*grad_phi[0][0] + u[to_size(v1)]*grad_phi[1][0] + u[to_size(v2)]*grad_phi[2][0];
+            const double guy = u[to_size(v0)]*grad_phi[0][1] + u[to_size(v1)]*grad_phi[1][1] + u[to_size(v2)]*grad_phi[2][1];
 
             double nx = 0.0, ny = 0.0;
             if (is_outer) {

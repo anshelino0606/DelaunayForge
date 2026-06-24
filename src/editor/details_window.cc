@@ -254,7 +254,7 @@ void DetailsWindow::assemble_preview(PDEComponent& pde, PlanarMeshComponent& mes
     prob.a.set_constant(1.0);
     prob.c.set_constant(0.0);
     prob.f.set_constant(0.0);
-    prob.fractional.reset();
+    prob.set_operator_spec(LocalEllipticSpec{});
 
     pde.fill_fem_problem(prob);
 

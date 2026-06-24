@@ -21,7 +21,7 @@
 #include "math/fem/fem_energy_metrics.h"
 #include "math/fem/fem_self_tests.h"
 #include "math/fem/fem_problem.h"
-#include "math/fem/fem_assemblers_p1.h"
+#include "math/fem/fem_assembler.h"
 
 namespace fem {
 
@@ -1685,7 +1685,7 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                     if (is_classical) {
                         assemble_and_solve_local_P1(prob, sol);
                     } else {
-                        assemble_and_solve_fractional_auto_P1(prob, sol);
+                        assemble_and_solve_fractional_P1(prob, sol);
                     }
                     slot.u = sol.solution_u;
                     slot.energy = compute_energy_terms(
@@ -1694,30 +1694,32 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                     if (is_classical) {
                         slot.energy.bilinear_energy = compute_classical_bilinear_energy(
                             local_mesh, sol.solution_u, prob.a);
-                    } else if (prob.fractional &&
-                               prob.fractional->type == FractionalType::Spectral) {
+                    } else if (std::holds_alternative<FractionalSpectralSpec>(prob.operator_spec())) {
                         // Spectral: energy computed inside the spectral solver
                         slot.energy.bilinear_energy = sol.spectral_bilinear_energy;
                     } else {
-                        // Integral / Regional: compute from the kernel formula directly
-                        const double s_loc = prob.fractional ? (double)prob.fractional->s : 0.5;
-                        const double C_loc = prob.fractional ? (double)prob.fractional->scale : 1.0;
+                        const bool is_integral = std::holds_alternative<FractionalIntegralSpec>(prob.operator_spec());
+                        const auto* integral = std::get_if<FractionalIntegralSpec>(&prob.operator_spec());
+                        const auto* regional = std::get_if<FractionalRegionalSpec>(&prob.operator_spec());
+                        const double s_loc = integral ? (double)integral->s : (regional ? (double)regional->s : 0.5);
+                        const double C_loc = integral ? (double)integral->scale : (regional ? (double)regional->scale : 1.0);
                         slot.energy.bilinear_energy = compute_fractional_bilinear_energy(
-                            local_mesh, sol.solution_u, s_loc, C_loc);
+                            local_mesh, sol.solution_u, s_loc, C_loc, is_integral);
                     }
 
                     // Dirichlet boundary work — operator-consistent computation
-                    if (is_classical || (prob.fractional &&
-                        prob.fractional->type == FractionalType::Spectral)) {
+                    if (is_classical || std::holds_alternative<FractionalSpectralSpec>(prob.operator_spec())) {
                         // Classical / Spectral: gradient-flux-based
                         slot.energy.dirichlet_work = compute_dirichlet_boundary_work(
                             local_mesh, sol.solution_u, prob.a);
                     } else {
-                        // Integral / Regional: nonlocal interaction work
-                        const double s_loc = prob.fractional ? (double)prob.fractional->s : 0.5;
-                        const double C_loc = prob.fractional ? (double)prob.fractional->scale : 1.0;
+                        const bool is_integral = std::holds_alternative<FractionalIntegralSpec>(prob.operator_spec());
+                        const auto* integral = std::get_if<FractionalIntegralSpec>(&prob.operator_spec());
+                        const auto* regional = std::get_if<FractionalRegionalSpec>(&prob.operator_spec());
+                        const double s_loc = integral ? (double)integral->s : (regional ? (double)regional->s : 0.5);
+                        const double C_loc = integral ? (double)integral->scale : (regional ? (double)regional->scale : 1.0);
                         slot.energy.dirichlet_work = compute_nonlocal_dirichlet_work(
-                            local_mesh, sol.solution_u, s_loc, C_loc);
+                            local_mesh, sol.solution_u, s_loc, C_loc, is_integral);
                     }
 
                     finalize_energy_metrics(slot.energy, W);
@@ -1750,7 +1752,7 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                 {
                     FEMProblem prob_c = pb;
                     prob_c.a = 1.0;
-                    prob_c.fractional.reset();
+                    prob_c.set_operator_spec(LocalEllipticSpec{});
                     fill_slot(cmp.slots[FracCompare::SLOT_CLASSICAL], prob_c, true, "Classical");
                     cmp.progress.store(1);
                 }
@@ -1758,11 +1760,15 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                 if (do_spectral) {
                     FEMProblem prob_f = pb;
                     prob_f.a = 1.0;
-                    prob_f.fractional = FractionalEquationConfig{};
-                    prob_f.fractional->s = (double)s_val;
-                    prob_f.fractional->scale = 1.0;
-                    prob_f.fractional->type = FractionalType::Spectral;
-                    prob_f.fractional->spectral_k = std::min(200, local_mesh.dof_count());
+                    prob_f.set_operator_spec(FractionalSpectralSpec{
+                        .s = (double)s_val,
+                        .scale = 1.0,
+                        .eig_clip = 0.0,
+                        .spectral_k = std::min<Count>(
+                            Count{200},
+                            to_count(local_mesh.dof_count())
+                        )
+                    });
                     fill_slot(cmp.slots[FracCompare::SLOT_SPECTRAL], prob_f, false, "Spectral");
                 }
                 cmp.progress.store(2);
@@ -1770,10 +1776,7 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                 if (do_integral) {
                     FEMProblem prob_f = pb;
                     prob_f.a = 1.0;
-                    prob_f.fractional = FractionalEquationConfig{};
-                    prob_f.fractional->s = (double)s_val;
-                    prob_f.fractional->scale = 1.0;
-                    prob_f.fractional->type = FractionalType::Integral;
+                    prob_f.set_operator_spec(FractionalIntegralSpec{.s = (double)s_val, .scale = 1.0});
                     fill_slot(cmp.slots[FracCompare::SLOT_INTEGRAL], prob_f, false, "Integral");
                 }
                 cmp.progress.store(3);
@@ -1781,10 +1784,7 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                 if (do_regional) {
                     FEMProblem prob_f = pb;
                     prob_f.a = 1.0;
-                    prob_f.fractional = FractionalEquationConfig{};
-                    prob_f.fractional->s = (double)s_val;
-                    prob_f.fractional->scale = 1.0;
-                    prob_f.fractional->type = FractionalType::Regional;
+                    prob_f.set_operator_spec(FractionalRegionalSpec{.s = (double)s_val, .scale = 1.0});
                     fill_slot(cmp.slots[FracCompare::SLOT_REGIONAL], prob_f, false, "Regional");
                 }
                 cmp.progress.store(4);

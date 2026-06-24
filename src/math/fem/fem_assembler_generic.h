@@ -2,11 +2,11 @@
 #define FEM_ASSEMBER_GENERIC
 
 #include "fem_problem.h"
-#include "fem_simulation.h"
-#include "dirichlet_map.h"
-#include <vector>
+#include "fem_assembler.h"
+#include "math/fem/fem_boundary_adapter.h"
+#include "math/fem/operators/boundary_load_model.h"
 #include <algorithm>
-#include <tuple>
+#include <vector>
 
 namespace fem {
 
@@ -16,15 +16,16 @@ FEMSystemT<Real> assemble_generic(const FEMProblem& P) {
     if (!P.mesh) return sys;
 
     const FEMMesh& M = *P.mesh;
-    const int N = M.dof_count();
+    const Index N = M.dof_count_index();
 
     IntegratorPolicy integ(P);
 
     std::vector<Triplet> T;
-    std::vector<Real> b(N, Real(0));
-    T.reserve((size_t)N * 7);
+    std::vector<Real> b(to_size(N), Real(0));
+    T.reserve(to_size(N) * 7u + to_size(N));
 
-    const DirichletData D = build_dirichlet_data(M);
+    const BoundaryModel boundary = P.boundary.empty() ? make_boundary_model(M) : P.boundary;
+    const DirichletMask D = build_dirichlet_mask(boundary, M.dof_count_count());
 
     Real Ke[3][3];
     Real be[3];
@@ -33,77 +34,59 @@ FEMSystemT<Real> assemble_generic(const FEMProblem& P) {
         integ.element(M, E, Ke, be);
 
         for (int li = 0; li < 3; ++li) {
-            const int I = E.v[li];
+            const Index I = E.v[li];
+            if (!is_valid(I, b.size())) continue;
 
-            // RHS volume
-            if (!D.is_dirichlet[I]) {
-                b[I] += be[li];
+            if (!D.contains(I)) {
+                b[to_size(I)] += be[li];
             }
 
             for (int lj = 0; lj < 3; ++lj) {
-                const int J = E.v[lj];
+                const Index J = E.v[lj];
+                if (!is_valid(J, b.size())) continue;
+
                 const Real aIJ = Ke[li][lj];
 
-                if (!D.is_dirichlet[I] && !D.is_dirichlet[J]) {
-                    T.push_back({I, J, (double)aIJ});
-                } else if (!D.is_dirichlet[I] && D.is_dirichlet[J]) {
-                    b[I] -= aIJ * (Real)D.value[J];
+                if (!D.contains(I) && !D.contains(J)) {
+                    T.push_back({I, J, static_cast<Real>(aIJ)});
+                } else if (!D.contains(I) && D.contains(J)) {
+                    b[to_size(I)] -= aIJ * static_cast<Real>(D.value[to_size(J)]);
                 }
-                // if I is Dirichlet: skip row contributions; we’ll set row later.
             }
         }
     }
 
-    for (const auto& e : M.edges_bc) {
-        if (e.type == BCType::Dirichlet || e.type == BCType::None) continue;
-
-        integ.boundary(M, e, T, b);
-    }
+    BoundaryLoadModel{}.add_natural_terms(boundary, M, T, b);
 
     if (!T.empty()) {
-        std::vector<Triplet> Tf;
-        Tf.reserve(T.size());
-        for (auto& tr : T) {
-            if (D.is_dirichlet[tr.r] || D.is_dirichlet[tr.c]) continue;
-            Tf.push_back(tr);
+        std::vector<Triplet> filtered;
+        filtered.reserve(T.size() + D.is_dirichlet.size());
+        for (const Triplet& tr : T) {
+            if (!is_valid(tr.r, D.is_dirichlet.size()) || !is_valid(tr.c, D.is_dirichlet.size())) continue;
+            if (D.contains(tr.r) || D.contains(tr.c)) continue;
+            filtered.push_back(tr);
         }
-        T.swap(Tf);
+        T.swap(filtered);
+    }
+
+    for (Index i = 0; i < N; ++i) {
+        if (!D.contains(i)) continue;
+        T.push_back({i, i, Real(1)});
+        b[to_size(i)] = static_cast<Real>(D.value[to_size(i)]);
     }
 
     sys.A = build_crs_from_triplets(N, std::move(T));
     sys.b = std::move(b);
-    sys.x.assign(N, Real(0));
+    sys.x.assign(to_size(N), Real(0));
 
-    for (int i = 0; i < N; ++i) {
-        if (!D.is_dirichlet[i]) continue;
-
-        // zero row i
-        for (int k = sys.A.row_ptr[i]; k < sys.A.row_ptr[i+1]; ++k) {
-            sys.A.vals[k] = 0.0;
+    for (Index i = 0; i < N; ++i) {
+        if (D.contains(i)) {
+            sys.x[to_size(i)] = static_cast<Real>(D.value[to_size(i)]);
         }
-
-        bool diag_found = false;
-        for (int k = sys.A.row_ptr[i]; k < sys.A.row_ptr[i+1]; ++k) {
-            if (sys.A.col_idx[k] == i) {
-                sys.A.vals[k] = 1.0;
-                diag_found = true;
-                break;
-            }
-        }
-        if (!diag_found) {
-            const int insert_at = sys.A.row_ptr[i+1];
-            sys.A.col_idx.insert(sys.A.col_idx.begin() + insert_at, i);
-            sys.A.vals.insert(sys.A.vals.begin() + insert_at, 1.0);
-            for (int r = i + 1; r < (int)sys.A.row_ptr.size(); ++r) sys.A.row_ptr[r] += 1;
-        }
-
-        sys.b[i] = (Real)D.value[i];
-        sys.x[i] = (Real)D.value[i];
     }
 
     return sys;
 }
-
 
 } // namespace fem
 
