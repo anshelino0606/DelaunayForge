@@ -1,6 +1,7 @@
 #include "math/fem/field/fem_reference_provider.h"
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
+#include "math/fem/fem_discretization_dispatch.h"
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
@@ -224,7 +225,7 @@ bool FEMReferenceProvider::solve_reference(
     prob.mesh = &out.mesh;
 
     DifferentialEquationSolution ref_sol;
-    FEMSystem sys = assemble_and_solve_auto_P1(prob, ref_sol);
+    FEMSystem sys = assemble_and_solve_P1(prob, ref_sol);
 
     if (!ref_sol.is_ready()) {
         out.error_message = "Assembly/solve failed for this reference mesh.";
@@ -342,7 +343,7 @@ bool FEMReferenceProviderExactDirichlet::solve_reference(
     prob.mesh = &out.mesh;
 
     DifferentialEquationSolution ref_sol;
-    FEMSystem sys = assemble_and_solve_auto_P1(prob, ref_sol);
+    FEMSystem sys = assemble_and_solve_P1(prob, ref_sol);
 
     if (!ref_sol.is_ready()) {
         out.error_message = "Assembly/solve failed for this mesh.";

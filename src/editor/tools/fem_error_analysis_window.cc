@@ -1685,7 +1685,7 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                     if (is_classical) {
                         assemble_and_solve_local_P1(prob, sol);
                     } else {
-                        assemble_and_solve_fractional_auto_P1(prob, sol);
+                        assemble_and_solve_fractional_P1(prob, sol);
                     }
                     slot.u = sol.solution_u;
                     slot.energy = compute_energy_terms(

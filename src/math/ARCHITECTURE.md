@@ -1,58 +1,62 @@
-# Math architecture
+# math architecture
 
 ```mermaid
 flowchart LR
-    UI[PDEComponent] --> Req[build SolveRequest]
-    Req --> PDE[pde/model + operator + boundary + request]
-    PDE --> FEM[fem/solve request + mesh]
-    FEM --> Basis[fem_discretization_dispatch]
-    Basis --> P1[P1 assembly family]
-    Basis -. later .-> P2[P2 assembly family]
-    Basis -. later .-> Q1[Q1 assembly family]
-    P1 --> FEMOps[fem/operators]
-    P1 --> Solver[CG / dense / spectral]
-    Solver --> Sol[solution]
+    C[PDEComponent] --> R[SolveRequest]
+    R --> D[fem::solve]
+    D --> F[FEMProblem adapter]
+    F --> B[fem_discretization_dispatch]
+    B --> P1[P1 assembly/solve]
 ```
 
 ```mermaid
 flowchart TD
-    SolveRequest --> PDEModel
-    SolveRequest --> OperatorSpec
-    SolveRequest --> BoundaryModel
-    SolveRequest --> DiscretizationSpec
-    DiscretizationSpec --> Basis[FEMBasisKind]
-    OperatorSpec --> LocalEllipticSpec
-    OperatorSpec --> FractionalIntegralSpec
-    OperatorSpec --> FractionalRegionalSpec
-    OperatorSpec --> FractionalSpectralSpec
+    P[PDEModel] --> R[SolveRequest]
+    O[OperatorSpec] --> R
+    G[BoundaryModel] --> R
+    T[TimeStepState] --> R
+    K[DiscretizationSpec] --> R
 ```
 
 ```mermaid
 flowchart TD
-    femsolve[fem::solve] --> fembackend[solve_fem]
-    fembackend --> basis[assemble_and_solve_for_basis]
-    basis --> p1[assemble_and_solve_P1]
-    p1 --> Local[local sparse P1]
-    p1 --> Integral[fractional integral P1]
-    p1 --> Regional[fractional regional P1]
-    p1 --> Spectral[spectral modal P1]
-    Integral -. large N .-> MatrixFree[FractionalMatrixFreeP1Operator]
-    Regional -. large N .-> MatrixFree
-```
+    P1[P1 dispatcher] --> L[LocalEllipticSpec]
+    P1 --> I[FractionalIntegralSpec]
+    P1 --> G[FractionalRegionalSpec]
+    P1 --> S[FractionalSpectralSpec]
 
-```mermaid
-flowchart TD
-    BoundaryModel --> Mask[DirichletMask]
-    Mask --> Assembly[emit diagonal / eliminate once]
-    BoundaryModel --> Natural[BoundaryLoadModel]
-    Natural --> Neumann
-    Natural --> Robin
+    L --> A1[consistent local stiffness + mass + RHS]
+    I --> A2[nonlocal pair matrix + exterior tail + consistent RHS]
+    G --> A3[nonlocal pair matrix + consistent RHS]
+    S --> A4[spectral modal solve]
 ```
 
 ```mermaid
 flowchart LR
-    types[types.h\nReal, Index:uint32_t, Count:uint32_t] --> pde
-    types --> fem
-    types --> femops[fem/operators]
-    linop[operators/LinearOperator] --> femops
+    M[FEMMesh] --> DM[DirichletMask]
+    BM[BoundaryModel] --> DM
+    BM --> BL[BoundaryLoadModel]
+    DM --> E[Dirichlet elimination]
+    BL --> SYS[FEMSystem]
 ```
+
+```mermaid
+flowchart LR
+    types[types.h] --> Real
+    types --> Index
+    types --> Count
+    Index --> Mesh[FEMMesh connectivity]
+    Index --> CRS[CRS row/column indices]
+    Count --> Sizes[mode counts / dof counts]
+```
+
+## Header / source split
+
+```mermaid
+flowchart LR
+  H[.h declarations] --> CC[.cc implementation]
+  H --> T[templates / constexpr only]
+  CC --> S[compiled implementation]
+```
+
+Policy: non-template FEM/PDE implementation lives in `.cc`; headers keep type declarations, function declarations, lightweight templates, constexpr constants, and engine registration declarations.

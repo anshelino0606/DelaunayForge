@@ -30,9 +30,7 @@ struct SolveRequest {
     TimeStepState time_step{};
 };
 
-[[nodiscard]] inline bool is_transient_solve(SolveKind kind) noexcept {
-    return kind == SolveKind::HeatImplicitEuler || kind == SolveKind::WaveNewmark;
-}
+[[nodiscard]] bool is_transient_solve(SolveKind kind) noexcept;
 
 } // namespace fem
 

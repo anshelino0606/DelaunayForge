@@ -37,76 +37,21 @@ struct CachedSolution {
     std::vector<double> transient_v;
     std::vector<double> transient_a;
 
-    [[nodiscard]] inline bool is_ready() const noexcept { 
-        return solution.is_ready(); 
-    }
+    [[nodiscard]] bool is_ready() const noexcept;
 
-    inline void invalidate() noexcept {
-        solution.invalidate();
-        min_max_valid = false;
-        history.clear();
-        history_time.clear();
-        history_cursor = -1;
+    void invalidate() noexcept;
 
-        transient_mesh.reset();
-        transient_time = 0.0;
-        transient_initialized = false;
+    [[nodiscard]] bool has_history() const noexcept;
 
-        transient_preset_tag = nullptr;
-        transient_v.clear();
-        transient_a.clear();
-    }
+    [[nodiscard]] const DifferentialEquationSolution& current_solution() const noexcept;
 
-    [[nodiscard]] inline bool has_history() const noexcept {
-        return history_cursor >= 0 && history_cursor < (int)history.size();
-    }
+    void clear_history() noexcept;
 
-    [[nodiscard]] inline const DifferentialEquationSolution& current_solution() const noexcept {
-        return has_history() ? history[(size_t)history_cursor] : solution;
-    }
+    void push_history(double t, const DifferentialEquationSolution& sol, size_t max_frames);
 
-    inline void clear_history() noexcept {
-        history.clear();
-        history_time.clear();
-        history_cursor = -1;
-    }
+    bool seek_history(int idx);
 
-    inline void push_history(double t, const DifferentialEquationSolution& sol, size_t max_frames) {
-        if (max_frames == 0) return;
-
-        if (history.size() >= max_frames) {
-            // Drop oldest frame.
-            history.erase(history.begin());
-            history_time.erase(history_time.begin());
-            if (history_cursor > 0) {
-                --history_cursor;
-            }
-        }
-
-        history.push_back(sol);
-        history_time.push_back(t);
-        history_cursor = (int)history.size() - 1;
-    }
-
-    inline bool seek_history(int idx) {
-        if (idx < 0 || idx >= (int)history.size()) return false;
-        history_cursor = idx;
-        solution = history[(size_t)history_cursor];
-        min_max_valid = false;
-        return true;
-    }
-
-    [[nodiscard]] inline std::pair<double, double> get_bounds() const noexcept {
-        if (min_max_valid && solution.is_ready()) [[likely]] {
-            return {cached_min, cached_max};
-        }
-        if (solution.is_ready()) [[likely]] {
-            cached_min = solution.u_min;
-            cached_max = solution.u_max;
-            min_max_valid = true;
-        }
-        return {cached_min, cached_max};
-    }
+    [[nodiscard]] std::pair<double, double> get_bounds() const noexcept;
 };
 
 class PDEComponent : public Component {
@@ -120,26 +65,21 @@ public:
     const DifferentialEquationSolution& solve(MeshComponent* mesh = nullptr);
     const DifferentialEquationSolution& solve_combined_domain();
 
-    [[nodiscard]] bool time_playback_enabled() const noexcept { return time_playback_enabled_; }
-    [[nodiscard]] bool time_playing() const noexcept { return time_playing_; }
-    [[nodiscard]] double time_seconds() const noexcept { return time_seconds_; }
-    [[nodiscard]] double time_step_seconds() const noexcept { return time_step_seconds_; }
-    [[nodiscard]] double time_speed() const noexcept { return time_speed_; }
-    [[nodiscard]] bool time_record_history() const noexcept { return time_record_history_; }
-    [[nodiscard]] int32_t history_max_frames() const noexcept { return history_max_frames_; }
+    [[nodiscard]] bool time_playback_enabled() const noexcept;
+    [[nodiscard]] bool time_playing() const noexcept;
+    [[nodiscard]] double time_seconds() const noexcept;
+    [[nodiscard]] double time_step_seconds() const noexcept;
+    [[nodiscard]] double time_speed() const noexcept;
+    [[nodiscard]] bool time_record_history() const noexcept;
+    [[nodiscard]] int32_t history_max_frames() const noexcept;
 
-    void set_time_playback_enabled(bool v) noexcept { 
-        time_playback_enabled_ = v; 
-        if (!time_playback_enabled_) {
-            time_playing_ = false;
-        }
-    }
-    void set_time_seconds(double t) noexcept { time_seconds_ = t; }
-    void set_time_playing(bool v) noexcept { time_playing_ = v; }
-    void set_time_step_seconds(double dt) noexcept { time_step_seconds_ = dt; }
-    void set_time_speed(double s) noexcept { time_speed_ = s; }
-    void set_time_record_history(bool v) noexcept { time_record_history_ = v; }
-    void set_history_max_frames(int32_t n) noexcept { history_max_frames_ = n; }
+    void set_time_playback_enabled(bool v) noexcept;
+    void set_time_seconds(double t) noexcept;
+    void set_time_playing(bool v) noexcept;
+    void set_time_step_seconds(double dt) noexcept;
+    void set_time_speed(double s) noexcept;
+    void set_time_record_history(bool v) noexcept;
+    void set_history_max_frames(int32_t n) noexcept;
 
     bool tick(double real_dt_seconds, MeshComponent* mesh, bool combined_domain);
 
@@ -153,15 +93,11 @@ public:
     PDEComponent();
     ~PDEComponent();
 
-    [[nodiscard]] inline DifferentialEquationSolutionMethod solution_method() const noexcept {
-        return solution_method_;
-    }
+    [[nodiscard]] DifferentialEquationSolutionMethod solution_method() const noexcept;
 
     [[nodiscard]] const DifferentialEquationSolution& solution(MeshComponent* mesh = nullptr) const noexcept;
 
-    [[nodiscard]] inline const MeshSolutionMap& all_solutions() const noexcept {
-        return mesh_solutions_;
-    }
+    [[nodiscard]] const MeshSolutionMap& all_solutions() const noexcept;
 
     [[nodiscard]] std::pair<double, double> get_global_bounds() const noexcept;
 
@@ -170,21 +106,11 @@ public:
 
     void fill_fem_problem(FEMProblem& prob) const noexcept;
 
-    inline void invalidate_all_solutions() noexcept {
-        solution_.invalidate();
-        for (auto& [mesh, cached] : mesh_solutions_) {
-            cached.invalidate();
-        }
-        global_bounds_valid_ = false;
-    }
+    void invalidate_all_solutions() noexcept;
 
-    [[nodiscard]] const FEMSystem* last_system() const noexcept { 
-        return has_last_sys_ ? &last_sys_ : nullptr; 
-    }
+    [[nodiscard]] const FEMSystem* last_system() const noexcept;
     
-    [[nodiscard]] const FEMMesh* last_mesh() const noexcept { 
-        return last_mesh_.get(); 
-    }
+    [[nodiscard]] const FEMMesh* last_mesh() const noexcept;
 
     const IReferenceProvider* reference_provider() const noexcept;
 

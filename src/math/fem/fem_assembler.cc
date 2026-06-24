@@ -14,6 +14,10 @@
 
 namespace fem {
 
+CRS build_crs_from_triplets(int n, std::vector<Triplet> T) {
+    return build_crs_from_triplets(n < 0 ? Index{0} : static_cast<Index>(n), std::move(T));
+}
+
 CRS build_crs_from_triplets(Index n, std::vector<Triplet> T) {
     std::sort(T.begin(), T.end(), [](const Triplet& a, const Triplet& b){
         return std::tie(a.r, a.c) < std::tie(b.r, b.c);
@@ -28,7 +32,7 @@ CRS build_crs_from_triplets(Index n, std::vector<Triplet> T) {
     Index cur_row = 0;
     Index last_r = invalid_index, last_c = invalid_index;
 
-    for (const auto& t : T) {
+    for (const Triplet& t : T) {
         while (cur_row < t.r) {
             row_ptr[to_size(++cur_row)] = to_index(col_idx.size());
             last_r = invalid_index; last_c = invalid_index;
@@ -53,9 +57,10 @@ void fill_solution(const FEMSystem& sys, DifferentialEquationSolution& out) {
         return;
     }
 
-    auto [mn, mx] = std::minmax_element(out.solution_u.begin(), out.solution_u.end());
-    out.u_min = *mn;
-    out.u_max = *mx;
+    const std::pair<std::vector<double>::iterator, std::vector<double>::iterator> bounds =
+        std::minmax_element(out.solution_u.begin(), out.solution_u.end());
+    out.u_min = *bounds.first;
+    out.u_max = *bounds.second;
 }
 
 
@@ -133,19 +138,32 @@ FEMSystem assemble_fractional_regional_laplacian_P1(
     return assemble_fractional_p1_operator_system(P, FractionalP1OperatorOptions{.s = static_cast<double>(spec.s), .scale = static_cast<double>(spec.scale), .include_integral_exterior_tail = false});
 }
 
+namespace {
+
+struct AssembleP1OperatorVisitor {
+    const FEMProblem& problem;
+
+    FEMSystem operator()(const LocalEllipticSpec&) const {
+        return assemble_poisson_P1(problem);
+    }
+
+    FEMSystem operator()(const FractionalIntegralSpec& spec) const {
+        return assemble_fractional_integral_laplacian_P1(problem, spec);
+    }
+
+    FEMSystem operator()(const FractionalRegionalSpec& spec) const {
+        return assemble_fractional_regional_laplacian_P1(problem, spec);
+    }
+
+    FEMSystem operator()(const FractionalSpectralSpec&) const {
+        return {};
+    }
+};
+
+} // namespace
+
 FEMSystem assemble_operator_P1(const FEMProblem& P, const OperatorSpec& op) {
-    return std::visit([&](const auto& spec) -> FEMSystem {
-        using T = std::decay_t<decltype(spec)>;
-        if constexpr (std::is_same_v<T, LocalEllipticSpec>) {
-            return assemble_poisson_P1(P);
-        } else if constexpr (std::is_same_v<T, FractionalIntegralSpec>) {
-            return assemble_fractional_integral_laplacian_P1(P, spec);
-        } else if constexpr (std::is_same_v<T, FractionalRegionalSpec>) {
-            return assemble_fractional_regional_laplacian_P1(P, spec);
-        } else if constexpr (std::is_same_v<T, FractionalSpectralSpec>) {
-            return assemble_poisson_P1(P);
-        }
-    }, op);
+    return std::visit(AssembleP1OperatorVisitor{P}, op);
 }
 
 FEMSystem assemble_and_solve_operator_P1(
@@ -206,18 +224,6 @@ FEMSystem assemble_and_solve_wave_newmark_P1(const FEMProblem& P, DifferentialEq
 }
 
 FEMSystem assemble_and_solve_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
-    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
-}
-
-FEMSystem assemble_and_solve_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
-    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
-}
-
-FEMSystem assemble_and_solve_fractional_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
-    out.invalidate();
-    if (!P.mesh || std::holds_alternative<LocalEllipticSpec>(P.operator_spec())) {
-        return {};
-    }
     return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
 }
 

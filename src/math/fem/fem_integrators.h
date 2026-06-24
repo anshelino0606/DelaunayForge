@@ -5,27 +5,11 @@
 #include "fem_element_p1.h"
 #include "math/differential_equation.h"
 #include "fem_quadrature.h"
+#include "math/pde/time_integration.h"
 #include <vector>
 #include <cmath>
 
 namespace fem {
-
-struct NewmarkParams {
-    double beta;
-    double gamma;
-    
-    [[nodiscard]] consteval bool is_stable() const noexcept {
-        return gamma >= 0.5 && beta >= 0.25 * (0.5 + gamma) * (0.5 + gamma);
-    }
-    
-    [[nodiscard]] consteval bool is_second_order() const noexcept {
-        return gamma == 0.5;
-    }
-};
-
-inline constexpr NewmarkParams default_newmark{0.25, 0.5};
-static_assert(default_newmark.is_stable(), "Default Newmark parameters must be stable");
-static_assert(default_newmark.is_second_order(), "Default Newmark parameters should be second-order accurate");
 
 namespace detail {
     inline void compute_p1_gradients(
@@ -123,42 +107,7 @@ struct LocalIntegratorP1 {
             }
         }
     }
-    
-    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
-                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
-    {
-        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
-        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
-
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
-
-        if (e.type == fem::BCType::Neumann) {
-            const Real gN = (Real)e.gN;
-            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
-            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
-            return;
-        }
-
-        if (e.type == fem::BCType::Robin) {
-            const Real k = (Real)e.k;
-            const Real g = (Real)e.g;
-
-            const Real m00 = L * (Real)(2.0/6.0);
-            const Real m01 = L * (Real)(1.0/6.0);
-            const Real m11 = L * (Real)(2.0/6.0);
-
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
-
-            rhs[to_size(e.a)] += g * (L * (Real)0.5);
-            rhs[to_size(e.b)] += g * (L * (Real)0.5);
-        }
-    }
-};
+    };
 
 template<typename Real>
 struct HeatImplicitEulerIntegratorP1 {
@@ -234,41 +183,6 @@ struct HeatImplicitEulerIntegratorP1 {
             }
         }
     }
-
-    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
-                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
-    {
-        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
-        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
-
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
-
-        if (e.type == fem::BCType::Neumann) {
-            const Real gN = (Real)e.gN;
-            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
-            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
-            return;
-        }
-
-        if (e.type == fem::BCType::Robin) {
-            const Real k = (Real)e.k;
-            const Real g = (Real)e.g;
-
-            const Real m00 = L * (Real)(2.0/6.0);
-            const Real m01 = L * (Real)(1.0/6.0);
-            const Real m11 = L * (Real)(2.0/6.0);
-
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
-
-            rhs[to_size(e.a)] += g * (L * (Real)0.5);
-            rhs[to_size(e.b)] += g * (L * (Real)0.5);
-        }
-    }
 };
 
 template<typename Real>
@@ -340,42 +254,6 @@ struct WaveNewmarkIntegratorP1 {
             for (int i = 0; i < 3; ++i) {
                 be[i] += (Real)(wq * fq * N[i] * E.area);
             }
-        }
-    }
-
-    void boundary(const FEMMesh& mesh, const FEMMesh::EdgeBC& e,
-                  std::vector<Triplet>& T, std::vector<Real>& rhs) const
-    {
-        // Same boundary handling as elliptic/heat assembly: Neumann/Robin contribute to RHS/matrix.
-        if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
-        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
-
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
-
-        if (e.type == fem::BCType::Neumann) {
-            const Real gN = (Real)e.gN;
-            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
-            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
-            return;
-        }
-
-        if (e.type == fem::BCType::Robin) {
-            const Real k = (Real)e.k;
-            const Real g = (Real)e.g;
-
-            const Real m00 = L * (Real)(2.0/6.0);
-            const Real m01 = L * (Real)(1.0/6.0);
-            const Real m11 = L * (Real)(2.0/6.0);
-
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
-            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
-            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
-
-            rhs[to_size(e.a)] += g * (L * (Real)0.5);
-            rhs[to_size(e.b)] += g * (L * (Real)0.5);
         }
     }
 };

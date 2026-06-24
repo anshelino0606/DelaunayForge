@@ -22,58 +22,37 @@ public:
 
     using ForEachParameter = std::function<void(PDEParameter*)>;
 
-    virtual void apply(DifferentialEquation& equation) const {}
-    virtual void for_each_parameter(const ForEachParameter& callback) const {}
+    virtual void apply(DifferentialEquation& equation) const;
+    virtual void for_each_parameter(const ForEachParameter& callback) const;
 
-    [[nodiscard]] virtual PDEParameterBundleView parameter_bundle() const { return {}; }
-
-    [[nodiscard]] virtual OperatorSpec operator_spec([[maybe_unused]] const DifferentialEquation& equation) const {
-        return parameter_bundle().operator_spec();
-    }
-
-    [[nodiscard]] virtual SolveKind solve_kind() const { return SolveKind::Stationary; }
-
-    [[nodiscard]] virtual SolveRequest make_solve_request(const DifferentialEquation& equation) const {
-        return SolveRequest{
-            .model = PDEModel(equation),
-            .operator_spec = operator_spec(equation),
-            .discretization = {},
-            .boundary = {},
-            .solve_kind = solve_kind(),
-            .time_step = {}
-        };
-    }
+    [[nodiscard]] virtual PDEParameterBundleView parameter_bundle() const;
+    [[nodiscard]] virtual OperatorSpec operator_spec(const DifferentialEquation& equation) const;
+    [[nodiscard]] virtual SolveKind solve_kind() const;
+    [[nodiscard]] virtual SolveRequest make_solve_request(const DifferentialEquation& equation) const;
 
     [[nodiscard]] static PDEPreset* default_preset();
 
-    [[nodiscard]] virtual bool has_exact_solution() const { return false; }
-
+    [[nodiscard]] virtual bool has_exact_solution() const;
     [[nodiscard]] virtual bool evaluate_exact_solution(
-        [[maybe_unused]] double x,
-        [[maybe_unused]] double y,
-        [[maybe_unused]] double& u_exact,
-        [[maybe_unused]] double* ux_exact = nullptr,
-        [[maybe_unused]] double* uy_exact = nullptr
-    ) const {
-        return false;
-    }
+        double x,
+        double y,
+        double& u_exact,
+        double* ux_exact = nullptr,
+        double* uy_exact = nullptr
+    ) const;
 
-    virtual const IReferenceProvider* reference_provider() const { return nullptr; }
+    virtual const IReferenceProvider* reference_provider() const;
 
-    [[nodiscard]] virtual bool has_initial_condition() const { return false; }
-    [[nodiscard]] virtual double evaluate_initial_condition([[maybe_unused]] double x, [[maybe_unused]] double y) const {
-        return 0.0;
-    }
+    [[nodiscard]] virtual bool has_initial_condition() const;
+    [[nodiscard]] virtual double evaluate_initial_condition(double x, double y) const;
 
-    [[nodiscard]] virtual bool has_initial_velocity() const { return false; }
-    [[nodiscard]] virtual double evaluate_initial_velocity([[maybe_unused]] double x, [[maybe_unused]] double y) const {
-        return 0.0;
-    }
+    [[nodiscard]] virtual bool has_initial_velocity() const;
+    [[nodiscard]] virtual double evaluate_initial_velocity(double x, double y) const;
 
-    [[nodiscard]] bool is_stationary() const { return solve_kind() == SolveKind::Stationary; }
+    [[nodiscard]] bool is_stationary() const;
 
 protected:
-    virtual void apply_custom(DifferentialEquation& equation) const {}
+    virtual void apply_custom(DifferentialEquation& equation) const;
 };
 
 } // namespace fem

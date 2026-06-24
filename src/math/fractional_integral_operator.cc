@@ -15,14 +15,38 @@ static void fill_fractional_element_rhs(
     glm::dvec3& bf,
     const FEMMesh& mesh,
     const FEMProblem& prob,
-    const std::vector<double>& nodal_mass,
+    const std::vector<double>&,
     const glm::ivec3& vertex_indices
 ) {
+    Index ids[3];
     for (int a = 0; a < 3; ++a) {
-        const Index i = to_index_or_invalid(vertex_indices[a]);
-        if (!is_valid(i, mesh.nodes.size())) continue;
-        const auto& node = mesh.nodes[to_size(i)];
-        bf[a] = prob.f(node.x, node.y) * nodal_mass[to_size(i)];
+        ids[a] = to_index_or_invalid(vertex_indices[a]);
+        if (!is_valid(ids[a], mesh.nodes.size())) {
+            return;
+        }
+    }
+
+    const auto& A = mesh.nodes[to_size(ids[0])];
+    const auto& B = mesh.nodes[to_size(ids[1])];
+    const auto& C = mesh.nodes[to_size(ids[2])];
+    const double area = 0.5 * std::abs((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y));
+    if (area <= 0.0) {
+        return;
+    }
+
+    constexpr double l1[3] = {1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0};
+    constexpr double l2[3] = {1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0};
+    constexpr double l3[3] = {2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0};
+    constexpr double w[3] = {1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0};
+
+    for (int q = 0; q < 3; ++q) {
+        const double x = l1[q] * A.x + l2[q] * B.x + l3[q] * C.x;
+        const double y = l1[q] * A.y + l2[q] * B.y + l3[q] * C.y;
+        const double N[3] = {l1[q], l2[q], l3[q]};
+        const double fq = prob.f(x, y);
+        for (int a = 0; a < 3; ++a) {
+            bf[a] += w[q] * fq * N[a] * area;
+        }
     }
 }
 

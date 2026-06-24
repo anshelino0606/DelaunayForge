@@ -26,9 +26,7 @@ using FEMSystem = FEMSystemT<double>;
 struct DirichletMask;
 
 CRS build_crs_from_triplets(Index n, std::vector<Triplet> T);
-inline CRS build_crs_from_triplets(int n, std::vector<Triplet> T) {
-    return build_crs_from_triplets(n < 0 ? Index{0} : static_cast<Index>(n), std::move(T));
-}
+CRS build_crs_from_triplets(int n, std::vector<Triplet> T);
 
 void fill_solution(const FEMSystem& sys, DifferentialEquationSolution& out);
 void solve_linear_system(FEMSystem& sys);
@@ -48,8 +46,6 @@ FEMSystem assemble_and_solve_local_P1(const FEMProblem& P, DifferentialEquationS
 FEMSystem assemble_and_solve_heat_implicit_euler_P1(const FEMProblem& P, DifferentialEquationSolution& out);
 FEMSystem assemble_and_solve_wave_newmark_P1(const FEMProblem& P, DifferentialEquationSolution& out);
 FEMSystem assemble_and_solve_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out);
-FEMSystem assemble_and_solve_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out);
-FEMSystem assemble_and_solve_fractional_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out);
 FEMSystem assemble_and_solve_operator_P1(const FEMProblem& P, const OperatorSpec& op, DifferentialEquationSolution& out);
 FEMSystem assemble_and_solve_spectral_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out);
 
