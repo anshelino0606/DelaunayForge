@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <numbers>
+#include "math/types.h"
 
 namespace fem {
 
@@ -15,6 +16,8 @@ public:
     static constexpr double PI = std::numbers::pi;
     static constexpr float F_PI = std::numbers::pi_v<float>;
     static constexpr double E = std::numbers::e;
+    static constexpr double pi = std::numbers::pi_v<double>;
+    static constexpr double two_pi = 2.0 * pi;
 
     // Clamps x value in range [-1; 1] before acos
     static double safe_acos(double x);

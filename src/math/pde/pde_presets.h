@@ -8,48 +8,126 @@
 
 namespace fem {
 
-FEM_DEFINE_PDE_PRESET_CONFIG(PDEPreset_Laplace, PDEPresetFlag::NoRHS);
+class PDEPreset_Laplace final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Laplace);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Laplace);
 
-FEM_DECLARE_DEFAULT_STATIONARY_PDE_PRESET(
-    PDEPreset_Laplace,
-    Diffusivity
-);
+    PDEPreset_Laplace();
+    ~PDEPreset_Laplace() override;
 
-FEM_DEFINE_PDE_PRESET_CONFIG(PDEPreset_Poisson, PDEPresetFlag::HasExactSolution);
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::Stationary; }
 
-FEM_DECLARE_DEFAULT_STATIONARY_PDE_PRESET(
-    PDEPreset_Poisson,
-    Diffusivity
-);
+protected:
+    PDEParameters::Diffusivity* Diffusivity = nullptr;
+};
 
-FEM_DECLARE_DEFAULT_STATIONARY_PDE_PRESET(
-    PDEPreset_Reaction,
-    Diffusivity,
-    Reaction
-);
+class PDEPreset_Poisson final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Poisson);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Poisson);
 
-FEM_DECLARE_DEFAULT_STATIONARY_PDE_PRESET(
-    PDEPreset_Fractional,
-    FractionalOperator
-);
+    PDEPreset_Poisson();
+    ~PDEPreset_Poisson() override;
 
-FEM_DECLARE_DEFAULT_TRANSIENT_PRESET_1IC(
-    PDEPreset_Heat,
-    Temperature,
-    Diffusivity,
-    Reaction
-);
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::Stationary; }
+    [[nodiscard]] bool has_exact_solution() const override { return true; }
+    [[nodiscard]] bool evaluate_exact_solution(double x, double y, double& u_exact, double* ux_exact = nullptr, double* uy_exact = nullptr) const override;
 
-FEM_DEFINE_PDE_PRESET_CONFIG(PDEPreset_Wave, PDEPresetFlag::NoRHS);
+protected:
+    PDEParameters::Diffusivity* Diffusivity = nullptr;
+    PDE_RHS* rhs_ = nullptr;
+};
 
-FEM_DECLARE_DEFAULT_TRANSIENT_PRESET_2IC(
-    PDEPreset_Wave,
-    Displacement,
-    Velocity,
-    Diffusivity,
-    Reaction
-);
+class PDEPreset_Reaction final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Reaction);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Reaction);
 
-}
+    PDEPreset_Reaction();
+    ~PDEPreset_Reaction() override;
+
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::Stationary; }
+
+protected:
+    PDEParameters::Diffusivity* Diffusivity = nullptr;
+    PDEParameters::Reaction* Reaction = nullptr;
+    PDE_RHS* rhs_ = nullptr;
+};
+
+class PDEPreset_Fractional final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Fractional);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Fractional);
+
+    PDEPreset_Fractional();
+    ~PDEPreset_Fractional() override;
+
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::Stationary; }
+
+protected:
+    PDEParameters::FractionalOperator* FractionalOperator = nullptr;
+    PDE_RHS* rhs_ = nullptr;
+};
+
+class PDEPreset_Heat final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Heat);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Heat);
+
+    PDEPreset_Heat();
+    ~PDEPreset_Heat() override;
+
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::HeatImplicitEuler; }
+    [[nodiscard]] bool has_initial_condition() const override { return true; }
+    [[nodiscard]] double evaluate_initial_condition(double x, double y) const override;
+
+protected:
+    Temperature* init_param_ = nullptr;
+    PDEParameters::DiffusivityDynamic* DiffusivityDynamic = nullptr;
+    PDEParameters::ReactionDynamic* ReactionDynamic = nullptr;
+    PDEDynamicRHS* rhs_ = nullptr;
+};
+
+class PDEPreset_Wave final : public PDEPreset {
+public:
+    FEM_DECLARE_OBJECT(PDEPreset_Wave);
+    FEM_DECLARE_PROPERTY_REGISTER(PDEPreset_Wave);
+
+    PDEPreset_Wave();
+    ~PDEPreset_Wave() override;
+
+    [[nodiscard]] PDEParameterBundleView parameter_bundle() const override;
+    void apply(DifferentialEquation& equation) const override;
+    void for_each_parameter(const ForEachParameter& callback) const override;
+    [[nodiscard]] SolveKind solve_kind() const override { return SolveKind::WaveNewmark; }
+    [[nodiscard]] bool has_initial_condition() const override { return true; }
+    [[nodiscard]] double evaluate_initial_condition(double x, double y) const override;
+    [[nodiscard]] bool has_initial_velocity() const override { return true; }
+    [[nodiscard]] double evaluate_initial_velocity(double x, double y) const override;
+
+protected:
+    Displacement* init_u_param_ = nullptr;
+    Velocity* init_v_param_ = nullptr;
+    PDEParameters::DiffusivityDynamic* DiffusivityDynamic = nullptr;
+    PDEParameters::ReactionDynamic* ReactionDynamic = nullptr;
+};
+
+} // namespace fem
 
 #endif // FEM_PDE_PRESETS_H

@@ -3,10 +3,8 @@
 
 #include <functional>
 #include <variant>
-#include <optional>
 #include <type_traits>
 #include <utility>
-#include "fractional_equation_config.h"
 
 namespace fem {
 
@@ -58,9 +56,6 @@ struct DifferentialEquationT {
     FEM_FOREACH_COEFF(FEM_DECLARE_COEFF, Real)
 
     Real time{ Real(0) };
-
-    std::optional<FractionalEquationConfig> fractional;
-
 };
 
 #undef FEM_DECLARE_COEFF

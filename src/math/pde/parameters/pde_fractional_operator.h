@@ -4,6 +4,7 @@
 #include "pde_parameter.h"
 #include "math/fractional_equation_config.h"
 #include "math/differential_equation.h"
+#include "math/pde/operator_spec.h"
 #include "core/object/object.h"
 #include "core/object/property.h"
 #include "core/macro.h"
@@ -19,22 +20,16 @@ public:
     FractionalOperator() = default;
     ~FractionalOperator() override = default;
 
-    void apply(DifferentialEquation& equation) const override {
-        equation.fractional = FractionalEquationConfig{
-            .s = s_,
-            .scale = scale_,
-            .eig_clip = eig_clip_,
-            .type = type_,
-            .spectral_k = spectral_k_
-        };
-    }
+    [[nodiscard]] FractionalEquationConfig config() const;
+    [[nodiscard]] OperatorSpec operator_spec() const;
+    void apply(DifferentialEquation& equation) const override;
 
 private:
-    double s_ = 0.5;               ///< Fractional order ∈ (0, 1)
-    double scale_ = 1.0;           ///< Operator scaling factor
-    double eig_clip_ = 0.0;        ///< Eigenvalue clipping threshold
-    FractionalType type_ = FractionalType::Integral;  ///< Operator type
-    int spectral_k_ = -1;                             ///< Modal truncation
+    double s_ = 0.5;
+    double scale_ = 1.0;
+    double eig_clip_ = 0.0;
+    FractionalType type_ = FractionalType::Integral;
+    int spectral_k_ = -1;
 };
 
 } // namespace fem::PDEParameters

@@ -1,40 +1,41 @@
 // fem_assembler.cpp
 #include "fem_assembler.h"
-#include <unordered_map>
 #include <algorithm>
 #include <cmath>
-#include <ranges>
-#include "fem_simulation.h"
+#include <tuple>
 #include "fem_problem.h"
 #include "math/differential_equation_solution.h"
 #include "fem_fractional_spectral_p1.h"
 #include "fem_assembler_generic.h"
 #include "fem_integrators.h"
+#include "math/fem/fem_boundary_adapter.h"
+#include "math/fem/operators/fractional_p1_operator.h"
+#include "fem_solver_cg.h"
 
 namespace fem {
 
-static void add_entry(std::vector<Triplet>& T, int i, int j, double v){
-    T.push_back({i,j,v});
+CRS build_crs_from_triplets(int n, std::vector<Triplet> T) {
+    return build_crs_from_triplets(n < 0 ? Index{0} : static_cast<Index>(n), std::move(T));
 }
 
-CRS build_crs_from_triplets(int n, std::vector<Triplet> T) {
+CRS build_crs_from_triplets(Index n, std::vector<Triplet> T) {
     std::sort(T.begin(), T.end(), [](const Triplet& a, const Triplet& b){
         return std::tie(a.r, a.c) < std::tie(b.r, b.c);
     });
 
-    std::vector<int> row_ptr(n + 1, 0);
-    std::vector<int> col_idx;
-    std::vector<double> vals;
+    std::vector<Index> row_ptr(to_size(n) + 1u, 0);
+    std::vector<Index> col_idx;
+    std::vector<Real> vals;
     col_idx.reserve(T.size());
     vals.reserve(T.size());
 
-    int cur_row = 0;
-    int last_r = -1, last_c = -1;
+    Index cur_row = 0;
+    Index last_r = invalid_index, last_c = invalid_index;
 
-    for (const auto& t : T) {
+    for (const Triplet& t : T) {
         while (cur_row < t.r) {
-            row_ptr[++cur_row] = (int)col_idx.size();
-            last_r = -1; last_c = -1;
+            row_ptr[to_size(++cur_row)] = to_index(col_idx.size());
+            last_r = invalid_index; last_c = invalid_index;
         }
         if (t.r == last_r && t.c == last_c) vals.back() += t.v;
         else {
@@ -43,8 +44,23 @@ CRS build_crs_from_triplets(int n, std::vector<Triplet> T) {
             last_r = t.r; last_c = t.c;
         }
     }
-    while (cur_row < n) row_ptr[++cur_row] = (int)col_idx.size();
+    while (cur_row < n) row_ptr[to_size(++cur_row)] = to_index(col_idx.size());
     return CRS{ std::move(row_ptr), std::move(col_idx), std::move(vals) };
+}
+
+
+void fill_solution(const FEMSystem& sys, DifferentialEquationSolution& out) {
+    out.solution_u = sys.x;
+    if (out.solution_u.empty()) {
+        out.u_min = 0.0;
+        out.u_max = 0.0;
+        return;
+    }
+
+    const std::pair<std::vector<double>::iterator, std::vector<double>::iterator> bounds =
+        std::minmax_element(out.solution_u.begin(), out.solution_u.end());
+    out.u_min = *bounds.first;
+    out.u_max = *bounds.second;
 }
 
 
@@ -62,186 +78,153 @@ FEMSystem assemble_wave_newmark_P1(const FEMProblem& P) {
 
 
 
-void apply_dirichlet_elimination(FEMSystem& S, const FEMMesh& M,
-                                 const std::vector<std::tuple<int,double>>& D)
+void apply_dirichlet_elimination(FEMSystem& S, const FEMMesh&,
+                                 const DirichletMask& D)
 {
-    const int N = static_cast<int>(S.b.size());
+    const Index N = to_index(S.b.size());
+    if (D.is_dirichlet.size() != S.b.size()) [[unlikely]] return;
 
-    for (const auto& [i, val] : D) {
-        if (i < 0 || i >= N) [[unlikely]] continue;
-        
-        for (int r = 0; r < N; ++r) {
-            if (r == i) [[likely]] continue;
+    std::vector<Triplet> rebuilt;
+    rebuilt.reserve(S.A.vals.size() + S.b.size());
 
-            for (int k = S.A.row_ptr[r]; k < S.A.row_ptr[r + 1]; ++k) {
-                if (S.A.col_idx[k] == i) [[unlikely]] {
-                    // b_r := b_r - A_ri * u_i^D
-                    S.b[r] -= S.A.vals[k] * val;
-                    S.A.vals[k] = 0.0; // zero column entry
-                }
+    for (Index r = 0; r < N; ++r) {
+        if (D.contains(r)) {
+            rebuilt.push_back({r, r, 1.0});
+            S.b[to_size(r)] = D.value[to_size(r)];
+            continue;
+        }
+
+        for (Index k = S.A.row_ptr[to_size(r)]; k < S.A.row_ptr[to_size(r + 1)]; ++k) {
+            const Index c = S.A.col_idx[to_size(k)];
+            const Real v = S.A.vals[to_size(k)];
+            if (D.contains(c)) {
+                S.b[to_size(r)] -= v * D.value[to_size(c)];
+                continue;
             }
+            rebuilt.push_back({r, c, v});
         }
+    }
 
-        // Zero the entire row i
-        for (int k = S.A.row_ptr[i]; k < S.A.row_ptr[i + 1]; ++k) {
-            S.A.vals[k] = 0.0;
+    S.A = build_crs_from_triplets(N, std::move(rebuilt));
+    if (S.x.size() != S.b.size()) {
+        S.x.assign(S.b.size(), 0.0);
+    }
+    for (Index i = 0; i < N; ++i) {
+        if (D.contains(i)) {
+            S.x[to_size(i)] = D.value[to_size(i)];
         }
-
-        // Put 1 on the diagonal A[i,i]
-        bool diag_found = false;
-        for (int k = S.A.row_ptr[i]; k < S.A.row_ptr[i + 1]; ++k) {
-            if (S.A.col_idx[k] == i) [[unlikely]] {
-                S.A.vals[k] = 1.0;
-                diag_found = true;
-                break;
-            }
-        }
-
-        if (!diag_found) [[unlikely]] {
-            int insert_at = S.A.row_ptr[i + 1];
-
-            S.A.col_idx.insert(S.A.col_idx.begin() + insert_at, i);
-            S.A.vals.insert(S.A.vals.begin() + insert_at, 1.0);
-
-            // shift row_ptr for subsequent rows
-            for (int r = i + 1; r < static_cast<int>(S.A.row_ptr.size()); ++r) {
-                S.A.row_ptr[r] += 1;
-            }
-        }
-
-        // Enforce the Dirichlet value on node i
-        S.b[i] = val;
     }
 }
 
+
 FEMSystem assemble_fractional_laplacian_P1(const FEMProblem& P,
                                            double s,
-                                           double C_scale = 1.0)
+                                           double C_scale)
 {
-    const FEMMesh& M = *P.mesh;
-    const int N = M.dof_count();
+    return assemble_fractional_integral_laplacian_P1(P, FractionalIntegralSpec{s, C_scale});
+}
 
-    // 1) nodal patch "masses" m_i = sum_E area(E)/3
-    std::vector<double> m(N, 0.0);
-    for (const auto& E : M.elems) {
-        const double share = E.area / 3.0;
-        m[E.v[0]] += share;
-        m[E.v[1]] += share;
-        m[E.v[2]] += share;
+FEMSystem assemble_fractional_integral_laplacian_P1(
+    const FEMProblem& P,
+    const FractionalIntegralSpec& spec
+) {
+    return assemble_fractional_p1_operator_system(P, FractionalP1OperatorOptions{.s = static_cast<double>(spec.s), .scale = static_cast<double>(spec.scale), .include_integral_exterior_tail = true});
+}
+
+FEMSystem assemble_fractional_regional_laplacian_P1(
+    const FEMProblem& P,
+    const FractionalRegionalSpec& spec
+) {
+    return assemble_fractional_p1_operator_system(P, FractionalP1OperatorOptions{.s = static_cast<double>(spec.s), .scale = static_cast<double>(spec.scale), .include_integral_exterior_tail = false});
+}
+
+namespace {
+
+struct AssembleP1OperatorVisitor {
+    const FEMProblem& problem;
+
+    FEMSystem operator()(const LocalEllipticSpec&) const {
+        return assemble_poisson_P1(problem);
     }
 
-    // Step 2: Assemble RHS: b_i ≈ f(x_i,y_i) * m_i
-    std::vector<double> b(N);
-    for (int i = 0; i < N; ++i) {
-        const auto& Pn = M.nodes[i];
-        b[i] = P.f(Pn.x, Pn.y) * m[i];
+    FEMSystem operator()(const FractionalIntegralSpec& spec) const {
+        return assemble_fractional_integral_laplacian_P1(problem, spec);
     }
 
-    // 3) Dense fractional stiffness in triplet form (O(N^2))
-    std::vector<Triplet> T;
-    T.reserve(4 * N * N);
-    const double s_exp = 1.0 + s;
-
-    for (int i = 0; i < N; ++i) {
-        const auto& Pi = M.nodes[i];
-        for (int j = i + 1; j < N; ++j) {
-            const auto& Pj = M.nodes[j];
-
-            const double dx = Pi.x - Pj.x;
-            const double dy = Pi.y - Pj.y;
-            const double r2 = dx * dx + dy * dy;
-
-            if (r2 == 0.0) [[unlikely]] continue;  // Skip coincident nodes
-
-            const double denom = std::pow(r2, s_exp);           // |x_i-x_j|^{2+2s}
-            const double w = C_scale * m[i] * m[j] / denom;
-
-            // Off-diagonal entries (negative coupling)
-            add_entry(T, i, j, -w);
-            add_entry(T, j, i, -w);
-
-            // Diagonal compensation: ∑_j A_ij = 0 (zero row sum)
-            add_entry(T, i, i, w);
-            add_entry(T, j, j, w);
-        }
+    FEMSystem operator()(const FractionalRegionalSpec& spec) const {
+        return assemble_fractional_regional_laplacian_P1(problem, spec);
     }
 
-    // 3b) Robin and Neumann boundary terms — same as classical integrators
-    for (const auto& e : M.edges_bc) {
-        if (e.type == BCType::None || e.type == BCType::Dirichlet) continue;
+    FEMSystem operator()(const FractionalSpectralSpec&) const {
+        return {};
+    }
+};
 
-        const auto& A = M.nodes[e.a];
-        const auto& B = M.nodes[e.b];
-        const double L = std::hypot(B.x - A.x, B.y - A.y);
-        if (L <= 0.0) continue;
+} // namespace
 
-        if (e.type == BCType::Robin) {
-            const double k = e.k;
-            const double g = e.g;
+FEMSystem assemble_operator_P1(const FEMProblem& P, const OperatorSpec& op) {
+    return std::visit(AssembleP1OperatorVisitor{P}, op);
+}
 
-            const double m00 = L * (2.0 / 6.0);
-            const double m01 = L * (1.0 / 6.0);
-            const double m11 = L * (2.0 / 6.0);
+FEMSystem assemble_and_solve_operator_P1(
+    const FEMProblem& P,
+    const OperatorSpec& op,
+    DifferentialEquationSolution& out
+) {
+    FEMProblem local = P;
+    local.set_operator_spec(op);
 
-            // ∫_Γ k φ_i φ_j ds  → stiffness
-            add_entry(T, e.a, e.a, k * m00);
-            add_entry(T, e.a, e.b, k * m01);
-            add_entry(T, e.b, e.a, k * m01);
-            add_entry(T, e.b, e.b, k * m11);
-
-            // ∫_Γ g φ_i ds  → RHS
-            b[e.a] += g * L * 0.5;
-            b[e.b] += g * L * 0.5;
-        } else if (e.type == BCType::Neumann) {
-            const double gN = e.gN;
-            b[e.a] += gN * L * 0.5;
-            b[e.b] += gN * L * 0.5;
-        }
+    if (std::holds_alternative<FractionalSpectralSpec>(op)) {
+        return assemble_and_solve_spectral_fractional_P1(local, out);
     }
 
-    // Step 4: Compress triplets → CRS format
-    std::sort(T.begin(), T.end(), [](const Triplet& a, const Triplet& b) {
-        return (a.r != b.r) ? (a.r < b.r) : (a.c < b.c);
-    });
+    out.invalidate();
+    FEMSystem sys;
+    if (!local.mesh) return sys;
 
-    std::vector<int> row_ptr(N + 1, 0);
-    std::vector<int> col_idx;
-    std::vector<double> vals;
-    col_idx.reserve(T.size());
-    vals.reserve(T.size());
-
-    int cur_i = 0;
-    row_ptr[0] = 0;
-
-    for (size_t k = 0; k < T.size();) {
-        int i = T[k].r;
-        while (cur_i < i) {
-            row_ptr[++cur_i] = static_cast<int>(col_idx.size());
-        }
-        
-        int j = T[k].c;
-        double v = 0.0;
-        while (k < T.size() && T[k].r == i && T[k].c == j) {
-            v += T[k].v;
-            ++k;
-        }
-        col_idx.push_back(j);
-        vals.push_back(v);
-    }
-    while (cur_i < N) {
-        row_ptr[++cur_i] = static_cast<int>(col_idx.size());
-    }
-
-    FEMSystem S;
-    S.A = {std::move(row_ptr), std::move(col_idx), std::move(vals)};
-    S.b = std::move(b);
-    S.x.assign(N, 0.0);
-
-    return S;
+    sys = assemble_operator_P1(local, op);
+    const BoundaryModel boundary = local.boundary.empty() ? make_boundary_model(*local.mesh) : local.boundary;
+    apply_dirichlet_elimination(sys, *local.mesh, build_dirichlet_mask(boundary, local.mesh->dof_count_count()));
+    solve_linear_system(sys);
+    fill_solution(sys, out);
+    return sys;
 }
 
 FEMSystem assemble_and_solve_spectral_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
     return assemble_and_solve_fractional_spectral_P1(P, out);
+}
+
+static FEMSystem assemble_and_solve_with(
+    const FEMProblem& P,
+    FEMSystem (*assemble)(const FEMProblem&),
+    DifferentialEquationSolution& out
+) {
+    out.invalidate();
+    FEMSystem sys;
+    if (!P.mesh || !assemble) {
+        return sys;
+    }
+
+    sys = assemble(P);
+    solve_linear_system(sys);
+    fill_solution(sys, out);
+    return sys;
+}
+
+FEMSystem assemble_and_solve_local_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_poisson_P1, out);
+}
+
+FEMSystem assemble_and_solve_heat_implicit_euler_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_heat_implicit_euler_P1, out);
+}
+
+FEMSystem assemble_and_solve_wave_newmark_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_wave_newmark_P1, out);
+}
+
+FEMSystem assemble_and_solve_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
 }
 
 void solve_linear_system(FEMSystem& sys) {
