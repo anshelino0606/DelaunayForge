@@ -10,7 +10,9 @@
 #include "fem_mesh.h"
 #include "fem_problem.h"
 #include "fem_error_analysis.h"
-#include "fem_fractional_nonlocal.h"
+#include "math/operators/nodal_mass_builder.h"
+#include "math/operators/nonlocal_kernel.h"
+#include "math/operators/exterior_interaction_model.h"
 #include "math/differential_equation.h"
 #include "geom/geometry_2d.h"
 
@@ -104,16 +106,16 @@ inline EnergyMetrics compute_energy_terms(
     em.reaction_energy *= 0.5;
 
     for (const auto& e : mesh.edges_bc) {
-        if (e.a < 0 || e.b < 0) continue;
-        if ((size_t)e.a >= mesh.nodes.size() || (size_t)e.b >= mesh.nodes.size()) continue;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
+        
 
-        const auto& A = mesh.nodes[(size_t)e.a];
-        const auto& B = mesh.nodes[(size_t)e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const double L = std::hypot(B.x - A.x, B.y - A.y);
         if (!(L > 0.0)) continue;
 
-        const double ua = u[(size_t)e.a];
-        const double ub = u[(size_t)e.b];
+        const double ua = u[to_size(e.a)];
+        const double ub = u[to_size(e.b)];
 
         if (e.type == BCType::Robin) {
             // ∫ k·u² ds  (exact for quadratic on linear edge):
@@ -150,17 +152,17 @@ inline double compute_dirichlet_boundary_work(
     std::span<const double> u,
     const Coefficient<Real>& kappa
 ) {
-    const int N = mesh.dof_count();
-    if ((int)u.size() != N || mesh.nodes.empty()) return 0.0;
+    const Count N = mesh.dof_count();
+    if (to_count(u.size()) != N || mesh.nodes.empty()) return 0.0;
 
     // Build edge → adjacent-triangle map (same as balance_metrics)
-    auto pack_edge = [](int a, int b) -> std::uint64_t {
-        const auto lo = (std::uint32_t)std::min(a, b);
-        const auto hi = (std::uint32_t)std::max(a, b);
-        return ((std::uint64_t)lo << 32) | hi;
+    auto pack_edge = [](Index a, Index b) -> std::uint64_t {
+        const auto lo = std::min(a, b);
+        const auto hi = std::max(a, b);
+        return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
     };
 
-    struct TriVerts { int v0, v1, v2; };
+    struct TriVerts { Index v0, v1, v2; bool boundary = true; };
     std::unordered_map<std::uint64_t, TriVerts> adj;
     adj.reserve(mesh.elems.size() * 3);
     for (const auto& E : mesh.elems) {
@@ -168,9 +170,9 @@ inline double compute_dirichlet_boundary_work(
             auto key = pack_edge(E.v[e], E.v[(e+1)%3]);
             auto it = adj.find(key);
             if (it == adj.end())
-                adj.emplace(key, TriVerts{E.v[0], E.v[1], E.v[2]});
+                adj.emplace(key, TriVerts{E.v[0], E.v[1], E.v[2], true});
             else
-                it->second = TriVerts{-1, -1, -1}; // interior edge — mark invalid
+                it->second.boundary = false; // interior edge — mark invalid
         }
     }
 
@@ -208,37 +210,37 @@ inline double compute_dirichlet_boundary_work(
 
     for (const auto& e : mesh.edges_bc) {
         if (e.type != BCType::Dirichlet) continue;
-        if (e.a < 0 || e.b < 0) continue;
-        if ((size_t)e.a >= mesh.nodes.size() || (size_t)e.b >= mesh.nodes.size()) continue;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
+        
 
-        const auto& A = mesh.nodes[(size_t)e.a];
-        const auto& B = mesh.nodes[(size_t)e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const double L = std::hypot(B.x - A.x, B.y - A.y);
         if (!(L > 0.0)) continue;
 
         // Find adjacent triangle
         auto key = pack_edge(e.a, e.b);
         auto it = adj.find(key);
-        if (it == adj.end() || it->second.v0 < 0) continue;
+        if (it == adj.end() || !it->second.boundary) continue;
 
-        const int v0 = it->second.v0, v1 = it->second.v1, v2 = it->second.v2;
-        if ((size_t)v0 >= mesh.nodes.size() ||
-            (size_t)v1 >= mesh.nodes.size() ||
-            (size_t)v2 >= mesh.nodes.size()) continue;
+        const Index v0 = it->second.v0, v1 = it->second.v1, v2 = it->second.v2;
+        if (!is_valid(v0, mesh.nodes.size()) ||
+            !is_valid(v1, mesh.nodes.size()) ||
+            !is_valid(v2, mesh.nodes.size())) continue;
 
-        const auto& P0 = mesh.nodes[(size_t)v0];
-        const auto& P1 = mesh.nodes[(size_t)v1];
-        const auto& P2 = mesh.nodes[(size_t)v2];
+        const auto& P0 = mesh.nodes[to_size(v0)];
+        const auto& P1 = mesh.nodes[to_size(v1)];
+        const auto& P2 = mesh.nodes[to_size(v2)];
 
         double grad_phi[3][2];
         compute_p1_gradients<double>(P0.x, P0.y, P1.x, P1.y, P2.x, P2.y, grad_phi);
 
-        const double gux = u[(size_t)v0]*grad_phi[0][0]
-                         + u[(size_t)v1]*grad_phi[1][0]
-                         + u[(size_t)v2]*grad_phi[2][0];
-        const double guy = u[(size_t)v0]*grad_phi[0][1]
-                         + u[(size_t)v1]*grad_phi[1][1]
-                         + u[(size_t)v2]*grad_phi[2][1];
+        const double gux = u[to_size(v0)]*grad_phi[0][0]
+                         + u[to_size(v1)]*grad_phi[1][0]
+                         + u[to_size(v2)]*grad_phi[2][0];
+        const double guy = u[to_size(v0)]*grad_phi[0][1]
+                         + u[to_size(v1)]*grad_phi[1][1]
+                         + u[to_size(v2)]*grad_phi[2][1];
 
         // Outward normal
         double nx = 0.0, ny = 0.0;
@@ -257,7 +259,7 @@ inline double compute_dirichlet_boundary_work(
         //
         // For outward-pointing n: q_out = -κ ∇u·n_out (heat flux outward is negative of conduction)
         // Power injected = -q_out * u_D * L = κ (∇u·n) * u_D * L
-        const double u_D_avg = 0.5 * (u[(size_t)e.a] + u[(size_t)e.b]);  // ≈ e.uD on Dirichlet edge
+        const double u_D_avg = 0.5 * (u[to_size(e.a)] + u[to_size(e.b)]);  // ≈ e.uD on Dirichlet edge
         work += kappa_val * (gux * nx + guy * ny) * u_D_avg * L;
     }
 

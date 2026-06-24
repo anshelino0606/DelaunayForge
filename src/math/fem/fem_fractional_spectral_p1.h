@@ -130,9 +130,10 @@ static inline void assemble_local_dense_P1(
     // Boundary integrals: Robin and Neumann
     for (const auto& e : mesh.edges_bc) {
         if (e.type == BCType::None || e.type == BCType::Dirichlet) continue;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
 
-        const auto& A = mesh.nodes[e.a];
-        const auto& B = mesh.nodes[e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const double L = std::hypot(B.x - A.x, B.y - A.y);
 
         if (e.type == BCType::Robin) {
@@ -146,19 +147,19 @@ static inline void assemble_local_dense_P1(
             const double m11 = L * m00_coeff;
 
             // ∫_Γ k φ_i φ_j ds  → stiffness (operator part of Robin)
-            K(e.a, e.a) += k * m00;
-            K(e.a, e.b) += k * m01;
-            K(e.b, e.a) += k * m01;
-            K(e.b, e.b) += k * m11;
+            K(static_cast<int>(e.a), static_cast<int>(e.a)) += k * m00;
+            K(static_cast<int>(e.a), static_cast<int>(e.b)) += k * m01;
+            K(static_cast<int>(e.b), static_cast<int>(e.a)) += k * m01;
+            K(static_cast<int>(e.b), static_cast<int>(e.b)) += k * m11;
 
             // ∫_Γ g φ_i ds  → RHS (inhomogeneous Robin)
-            b[static_cast<size_t>(e.a)] += g * L * 0.5;
-            b[static_cast<size_t>(e.b)] += g * L * 0.5;
+            b[to_size(e.a)] += g * L * 0.5;
+            b[to_size(e.b)] += g * L * 0.5;
         } else if (e.type == BCType::Neumann) {
             // ∫_Γ gN φ_i ds  → RHS
             const double gN = e.gN;
-            b[static_cast<size_t>(e.a)] += gN * L * 0.5;
-            b[static_cast<size_t>(e.b)] += gN * L * 0.5;
+            b[to_size(e.a)] += gN * L * 0.5;
+            b[to_size(e.b)] += gN * L * 0.5;
         }
     }
 }
@@ -311,7 +312,9 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
 
     // Modal truncation
     int use_k = n;
-    if (cfg->spectral_k > 0) use_k = std::min(use_k, cfg->spectral_k);
+    if (cfg->spectral_k > 0) {
+        use_k = std::min(use_k, static_cast<int>(cfg->spectral_k));
+    }
 
     // Use ge.Phi directly — no copy into a separate n×n matrix (saves n²)
     const DenseMat& Phi = ge.Phi;

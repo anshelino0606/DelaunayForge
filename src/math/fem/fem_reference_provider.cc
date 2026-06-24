@@ -39,9 +39,9 @@ static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
         FEMMesh::Node M;
         M.x = 0.5 * (A.x + B.x);
         M.y = 0.5 * (A.y + B.y);
-        M.id = (int)out.nodes.size();
+        M.id = to_index(out.nodes.size());
 
-        const int mid_id = M.id;
+        const int mid_id = static_cast<int>(M.id);
         out.nodes.push_back(M);
         edge_to_mid.emplace(key, mid_id);
         return mid_id;
@@ -68,10 +68,10 @@ static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
             continue;
         }
 
-        FEMMesh::Elem t0{{v0, m01, m20}, 0.0};
-        FEMMesh::Elem t1{{m01, v1, m12}, 0.0};
-        FEMMesh::Elem t2{{m20, m12, v2}, 0.0};
-        FEMMesh::Elem t3{{m01, m12, m20}, 0.0};
+        FEMMesh::Elem t0{{to_index_or_invalid(v0), to_index_or_invalid(m01), to_index_or_invalid(m20)}, 0.0};
+        FEMMesh::Elem t1{{to_index_or_invalid(m01), to_index_or_invalid(v1), to_index_or_invalid(m12)}, 0.0};
+        FEMMesh::Elem t2{{to_index_or_invalid(m20), to_index_or_invalid(m12), to_index_or_invalid(v2)}, 0.0};
+        FEMMesh::Elem t3{{to_index_or_invalid(m01), to_index_or_invalid(m12), to_index_or_invalid(m20)}, 0.0};
 
         t0.area = tri_area(t0.v[0], t0.v[1], t0.v[2]);
         t1.area = tri_area(t1.v[0], t1.v[1], t1.v[2]);
@@ -86,8 +86,8 @@ static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
 
     auto emit_bc_edge = [&](int a, int b, const FEMMesh::EdgeBC& src) {
         FEMMesh::EdgeBC e = src;
-        e.a = std::min(a, b);
-        e.b = std::max(a, b);
+        e.a = to_index_or_invalid(std::min(a, b));
+        e.b = to_index_or_invalid(std::max(a, b));
         out.edges_bc.push_back(e);
     };
 

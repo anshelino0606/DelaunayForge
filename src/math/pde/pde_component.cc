@@ -7,6 +7,9 @@
 #include "math/entities/planar_math_entity.h"
 #include "core/entity/entity.h"
 #include "math/fem/dirichlet_map.h"
+#include "math/fem/fem_solve_dispatcher.h"
+#include "math/pde/pde_solve_request_builder.h"
+#include "math/fem/fem_boundary_adapter.h"
 #include <limits>
 #include <algorithm>
 
@@ -78,7 +81,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
         const FEMMesh& fem_mesh = *cached_sol.transient_mesh;
         const int N = fem_mesh.dof_count();
 
-        const bool is_wave_newmark = preset->is_exactly<PDEPreset_Wave>();
+        const bool is_wave_newmark = preset->solve_kind() == SolveKind::WaveNewmark || preset->is_exactly<PDEPreset_Wave>();
 
         if (!cached_sol.transient_initialized || (int)cached_sol.solution.solution_u.size() != N) {
             cached_sol.solution.solution_u.assign((size_t)N, 0.0);
@@ -153,15 +156,15 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
 
         auto do_step = [&](double dt) {
             const double next_t = cached_sol.transient_time + dt;
-            auto make_problem = [&](double solve_time, std::span<const double> previous_state) {
-                DifferentialEquation equation;
-                equation.time = solve_time;
-                preset->apply(equation);
-
-                FEMProblem fem_problem(preset->make_solve_request(equation), &fem_mesh);
-                fem_problem.dt = dt;
-                fem_problem.u_prev = previous_state;
-                return fem_problem;
+            const BoundaryModel boundary = make_boundary_model(fem_mesh);
+            auto make_request = [&](double solve_time, std::span<const double> previous_state, SolveKind kind) {
+                return fem::make_solve_request(*preset, PresetSolveRequestInput{
+                    .time = solve_time,
+                    .boundary = boundary,
+                    .dt = dt,
+                    .previous_state = previous_state,
+                    .solve_kind = kind
+                });
             };
 
             if (is_wave_newmark) {
@@ -185,11 +188,10 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                     v_pred[idx] = v_n[idx] + v_coeff * a_n[idx];
                 }
 
-                FEMProblem fem_problem = make_problem(next_t, u_pred);
+                SolveRequest request = make_request(next_t, u_pred, SolveKind::WaveNewmark);
 
-                if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
-                    assembler(fem_problem, cached_sol.solution);
-
+                fem::solve(request, fem_mesh, cached_sol.solution);
+                if (cached_sol.solution.is_ready()) [[likely]] {
                     const std::vector<double> u_np1 = cached_sol.solution.solution_u;
                     cached_sol.transient_v.assign((size_t)N, 0.0);
                     cached_sol.transient_a.assign((size_t)N, 0.0);
@@ -216,10 +218,10 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
 
             } else {
                 const std::vector<double> u_prev = cached_sol.solution.solution_u;
-                FEMProblem fem_problem = make_problem(next_t, u_prev);
+                SolveRequest request = make_request(next_t, u_prev, preset->solve_kind());
 
-                if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
-                    assembler(fem_problem, cached_sol.solution);
+                fem::solve(request, fem_mesh, cached_sol.solution);
+                if (cached_sol.solution.is_ready()) [[likely]] {
                     cached_sol.transient_time = next_t;
                 }
             }
@@ -249,41 +251,38 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
 
     if (solution_method_ == DifferentialEquationSolutionMethod::FEM) [[likely]] {
         FEMMesh fem_mesh = target_mesh->build_fem_mesh();
-        DifferentialEquation equation;
-        equation.time = time_playback_enabled_ ? time_seconds_ : 0.0;
-        preset->apply(equation);
+        SolveRequest request = fem::make_solve_request(*preset, PresetSolveRequestInput{
+            .time = time_playback_enabled_ ? time_seconds_ : 0.0,
+            .boundary = make_boundary_model(fem_mesh),
+            .solve_kind = preset->solve_kind()
+        });
 
-        FEMProblem fem_problem(preset->make_solve_request(equation), &fem_mesh);
+        last_sys_ = fem::solve(request, fem_mesh, cached_sol.solution);
+        has_last_sys_ = cached_sol.solution.is_ready();
+        last_mesh_ = std::make_unique<FEMMesh>(fem_mesh);
 
-        if (FEMAssembler assembler = preset->fem_assembler()) [[likely]] {
-            assembler(fem_problem, cached_sol.solution);
-            int dirichlet_edges = 0;
-            for (const auto& e : fem_mesh.edges_bc) {
-                if (e.type == fem::BCType::Dirichlet) ++dirichlet_edges;
-            }
-            if (cached_sol.solution.is_ready()) {
-                LOGT_DEBUG(LogMath,
-                           "PDEComponent::solve(): Solved PDE for mesh (u=[%g,%g], dirichlet_edges=%d, tagged_edges=%zu)",
-                           cached_sol.solution.u_min,
-                           cached_sol.solution.u_max,
-                           dirichlet_edges,
-                           fem_mesh.edges_bc.size());
-                global_bounds_valid_ = false;
-            } else {
-                LOGT_ERROR(LogMath,
-                           "PDEComponent::solve(): FEM assembler failed (no solution produced) (dirichlet_edges=%d, tagged_edges=%zu)",
-                           dirichlet_edges,
-                           fem_mesh.edges_bc.size());
-            }
-
-            if (time_playback_enabled_ && time_record_history_) {
-                const size_t max_frames = (history_max_frames_ > 0) ? (size_t)history_max_frames_ : 0u;
-                cached_sol.push_history(time_seconds_, cached_sol.solution, max_frames);
-            }
+        int dirichlet_edges = 0;
+        for (const auto& e : fem_mesh.edges_bc) {
+            if (e.type == fem::BCType::Dirichlet) ++dirichlet_edges;
+        }
+        if (cached_sol.solution.is_ready()) {
+            LOGT_DEBUG(LogMath,
+                       "PDEComponent::solve(): Solved PDE for mesh (u=[%g,%g], dirichlet_edges=%d, tagged_edges=%zu)",
+                       cached_sol.solution.u_min,
+                       cached_sol.solution.u_max,
+                       dirichlet_edges,
+                       fem_mesh.edges_bc.size());
+            global_bounds_valid_ = false;
         } else {
-            const char* type_name = preset->get_type_info()->get_name_c_str();
-            LOGT_ERROR(LogMath, "PDEComponent::solve(): PDE preset %s has no valid FEM assembler!",
-                       type_name);
+            LOGT_ERROR(LogMath,
+                       "PDEComponent::solve(): SolveRequest dispatch failed (dirichlet_edges=%d, tagged_edges=%zu)",
+                       dirichlet_edges,
+                       fem_mesh.edges_bc.size());
+        }
+
+        if (time_playback_enabled_ && time_record_history_) {
+            const size_t max_frames = (history_max_frames_ > 0) ? (size_t)history_max_frames_ : 0u;
+            cached_sol.push_history(time_seconds_, cached_sol.solution, max_frames);
         }
     } else {
         LOGT_ERROR(LogMath, "PDEComponent::solve(): Unknown solution method!");

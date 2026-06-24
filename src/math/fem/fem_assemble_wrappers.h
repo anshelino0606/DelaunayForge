@@ -3,7 +3,6 @@
 
 #include "fem_assembler.h"
 #include "fem_problem.h"
-#include "fem_operator_dispatch.h"
 
 namespace fem {
 

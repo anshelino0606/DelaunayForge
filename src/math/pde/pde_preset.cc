@@ -14,4 +14,4 @@ PDEPreset* PDEPreset::default_preset() {
     return create_object<PDEPreset_Laplace>();
 }
 
-}
+} // namespace fem

@@ -128,15 +128,16 @@ struct LocalIntegratorP1 {
                   std::vector<Triplet>& T, std::vector<Real>& rhs) const
     {
         if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
 
-        const auto& A = mesh.nodes[e.a];
-        const auto& B = mesh.nodes[e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
 
         if (e.type == fem::BCType::Neumann) {
             const Real gN = (Real)e.gN;
-            rhs[e.a] += gN * (L * (Real)0.5);
-            rhs[e.b] += gN * (L * (Real)0.5);
+            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
+            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
             return;
         }
 
@@ -148,13 +149,13 @@ struct LocalIntegratorP1 {
             const Real m01 = L * (Real)(1.0/6.0);
             const Real m11 = L * (Real)(2.0/6.0);
 
-            T.push_back({e.a, e.a, (double)(k * m00)});
-            T.push_back({e.a, e.b, (double)(k * m01)});
-            T.push_back({e.b, e.a, (double)(k * m01)});
-            T.push_back({e.b, e.b, (double)(k * m11)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
 
-            rhs[e.a] += g * (L * (Real)0.5);
-            rhs[e.b] += g * (L * (Real)0.5);
+            rhs[to_size(e.a)] += g * (L * (Real)0.5);
+            rhs[to_size(e.b)] += g * (L * (Real)0.5);
         }
     }
 };
@@ -238,15 +239,16 @@ struct HeatImplicitEulerIntegratorP1 {
                   std::vector<Triplet>& T, std::vector<Real>& rhs) const
     {
         if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
 
-        const auto& A = mesh.nodes[e.a];
-        const auto& B = mesh.nodes[e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
 
         if (e.type == fem::BCType::Neumann) {
             const Real gN = (Real)e.gN;
-            rhs[e.a] += gN * (L * (Real)0.5);
-            rhs[e.b] += gN * (L * (Real)0.5);
+            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
+            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
             return;
         }
 
@@ -258,13 +260,13 @@ struct HeatImplicitEulerIntegratorP1 {
             const Real m01 = L * (Real)(1.0/6.0);
             const Real m11 = L * (Real)(2.0/6.0);
 
-            T.push_back({e.a, e.a, (double)(k * m00)});
-            T.push_back({e.a, e.b, (double)(k * m01)});
-            T.push_back({e.b, e.a, (double)(k * m01)});
-            T.push_back({e.b, e.b, (double)(k * m11)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
 
-            rhs[e.a] += g * (L * (Real)0.5);
-            rhs[e.b] += g * (L * (Real)0.5);
+            rhs[to_size(e.a)] += g * (L * (Real)0.5);
+            rhs[to_size(e.b)] += g * (L * (Real)0.5);
         }
     }
 };
@@ -346,15 +348,16 @@ struct WaveNewmarkIntegratorP1 {
     {
         // Same boundary handling as elliptic/heat assembly: Neumann/Robin contribute to RHS/matrix.
         if (e.type == fem::BCType::None || e.type == fem::BCType::Dirichlet) return;
+        if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) return;
 
-        const auto& A = mesh.nodes[e.a];
-        const auto& B = mesh.nodes[e.b];
+        const auto& A = mesh.nodes[to_size(e.a)];
+        const auto& B = mesh.nodes[to_size(e.b)];
         const Real L  = (Real)std::hypot(B.x - A.x, B.y - A.y);
 
         if (e.type == fem::BCType::Neumann) {
             const Real gN = (Real)e.gN;
-            rhs[e.a] += gN * (L * (Real)0.5);
-            rhs[e.b] += gN * (L * (Real)0.5);
+            rhs[to_size(e.a)] += gN * (L * (Real)0.5);
+            rhs[to_size(e.b)] += gN * (L * (Real)0.5);
             return;
         }
 
@@ -366,13 +369,13 @@ struct WaveNewmarkIntegratorP1 {
             const Real m01 = L * (Real)(1.0/6.0);
             const Real m11 = L * (Real)(2.0/6.0);
 
-            T.push_back({e.a, e.a, (double)(k * m00)});
-            T.push_back({e.a, e.b, (double)(k * m01)});
-            T.push_back({e.b, e.a, (double)(k * m01)});
-            T.push_back({e.b, e.b, (double)(k * m11)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m00)});
+            T.push_back({to_index_or_invalid(e.a), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.a), static_cast<fem::Real>(k * m01)});
+            T.push_back({to_index_or_invalid(e.b), to_index_or_invalid(e.b), static_cast<fem::Real>(k * m11)});
 
-            rhs[e.a] += g * (L * (Real)0.5);
-            rhs[e.b] += g * (L * (Real)0.5);
+            rhs[to_size(e.a)] += g * (L * (Real)0.5);
+            rhs[to_size(e.b)] += g * (L * (Real)0.5);
         }
     }
 };

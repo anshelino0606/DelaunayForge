@@ -4,7 +4,6 @@
 #include "fem_solve_pipeline.h"
 #include "fem_assemble_wrappers.h"
 #include "fem_assembler.h"
-#include "fem_operator_dispatch.h"
 
 namespace fem {
 

@@ -1764,7 +1764,10 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                         .s = (double)s_val,
                         .scale = 1.0,
                         .eig_clip = 0.0,
-                        .spectral_k = std::min(200, local_mesh.dof_count())
+                        .spectral_k = std::min<Count>(
+                            Count{200},
+                            to_count(local_mesh.dof_count())
+                        )
                     });
                     fill_slot(cmp.slots[FracCompare::SLOT_SPECTRAL], prob_f, false, "Spectral");
                 }

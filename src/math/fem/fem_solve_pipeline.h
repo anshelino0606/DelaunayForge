@@ -10,32 +10,20 @@
 #include "math/differential_equation_solution.h"
 #include "fem_assembler.h"
 #include "fem_assemble_wrappers.h"
+#include "math/fem/fem_boundary_adapter.h"
 
 namespace fem {
 
 using FEMAssembler = FEMSystem (*)(const FEMProblem&, DifferentialEquationSolution&);
 
 inline std::vector<std::tuple<int,double>>
+gather_dirichlet_set(const BoundaryModel& boundary, int dof_count) {
+    return make_dirichlet_set(boundary, dof_count);
+}
+
+inline std::vector<std::tuple<int,double>>
 gather_dirichlet_set(const FEMMesh& mesh) {
-    std::vector<int>    dcnt(mesh.dof_count(), 0);
-    std::vector<double> dsum(mesh.dof_count(), 0.0);
-
-    for (const auto& e : mesh.edges_bc) {
-        if (e.type == fem::BCType::Dirichlet) {
-            dcnt[e.a]++; dsum[e.a] += e.uD;
-            dcnt[e.b]++; dsum[e.b] += e.uD;
-        }
-    }
-
-    std::vector<std::tuple<int,double>> dirichlet;
-    dirichlet.reserve(mesh.dof_count());
-    for (int i = 0; i < mesh.dof_count(); ++i) {
-        if (dcnt[i]) {
-            double val = dsum[i] / std::max(1, dcnt[i]);
-            dirichlet.emplace_back(i, val);
-        }
-    }
-    return dirichlet;
+    return gather_dirichlet_set(make_boundary_model(mesh), mesh.dof_count());
 }
 
 inline void fill_solution(const FEMSystem& sys, DifferentialEquationSolution& out) {
@@ -64,22 +52,7 @@ inline FEMSystem assemble_and_solve_strong_dirichlet(
 
 inline std::vector<std::tuple<int,double>>
 extract_dirichlet_set(const FEMMesh& mesh) {
-    std::vector<int>    dcnt(mesh.dof_count(), 0);
-    std::vector<double> dsum(mesh.dof_count(), 0.0);
-
-    for (const auto& e : mesh.edges_bc) {
-        if (e.type == fem::BCType::Dirichlet) {
-            dcnt[e.a]++; dsum[e.a] += e.uD;
-            dcnt[e.b]++; dsum[e.b] += e.uD;
-        }
-    }
-
-    std::vector<std::tuple<int,double>> D;
-    D.reserve(mesh.dof_count());
-    for (int i = 0; i < mesh.dof_count(); ++i) {
-        if (dcnt[i]) D.emplace_back(i, dsum[i] / std::max(1, dcnt[i]));
-    }
-    return D;
+    return gather_dirichlet_set(mesh);
 }
 
 // weak legacy variation - need to deprecate

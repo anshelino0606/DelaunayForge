@@ -5,7 +5,6 @@
 #include "fem_assembler.h"
 #include "fem_assembler_generic.h"
 #include "fem_integrators.h"
-#include "fem_operator_dispatch.h"
 
 namespace fem {
 

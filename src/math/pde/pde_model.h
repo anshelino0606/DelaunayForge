@@ -1,5 +1,5 @@
-#ifndef FEM_PDE_MODEL_H
-#define FEM_PDE_MODEL_H
+#ifndef FEM_PDE_PDE_MODEL_H
+#define FEM_PDE_PDE_MODEL_H
 
 #include "math/differential_equation.h"
 
@@ -29,4 +29,4 @@ using PDEModel = PDEModelT<double>;
 
 } // namespace fem
 
-#endif // FEM_PDE_MODEL_H
+#endif // FEM_PDE_PDE_MODEL_H

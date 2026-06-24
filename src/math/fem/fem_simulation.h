@@ -21,6 +21,7 @@
 #include "fem_assemblers_p1.h"
 #include "fem_builders_p1.h"
 #include "fem_solve_pipeline.h"
+#include "math/fem/fem_solve_dispatcher.h"
 
 namespace fem {
 
@@ -83,10 +84,8 @@ public:
             request.operator_spec = LocalEllipticSpec{};
         }
 
-        fem::FEMProblem P(request, &mesh);
-
         fem::DifferentialEquationSolution out;
-        sys = fem::assemble_and_solve_auto_P1(P, out);
+        sys = fem::solve(request, mesh, out);
 
         solution_u = std::move(out.solution_u);
         u_min = out.u_min;

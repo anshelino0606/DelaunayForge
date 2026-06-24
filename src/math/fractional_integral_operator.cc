@@ -1,6 +1,8 @@
 #include "fractional_integral_operator.h"
 #include "fem/fem_mesh.h"
-#include "fem/fem_fractional_nonlocal.h"
+#include "operators/nodal_mass_builder.h"
+#include "operators/nonlocal_kernel.h"
+#include "operators/exterior_interaction_model.h"
 #include "fem/fem_problem.h"
 #include <cmath>
 
