@@ -2,10 +2,9 @@
 #define FEM_ASSEMBER_GENERIC
 
 #include "fem_problem.h"
-#include "fem_simulation.h"
-#include "dirichlet_map.h"
+#include "fem_assembler.h"
 #include "math/fem/fem_boundary_adapter.h"
-#include "math/operators/boundary_load_model.h"
+#include "math/fem/operators/boundary_load_model.h"
 #include <algorithm>
 #include <vector>
 
@@ -38,7 +37,6 @@ FEMSystemT<Real> assemble_generic(const FEMProblem& P) {
             const Index I = E.v[li];
             if (!is_valid(I, b.size())) continue;
 
-            // RHS volume. Dirichlet rows are prescribed below.
             if (!D.contains(I)) {
                 b[to_size(I)] += be[li];
             }

@@ -10,9 +10,9 @@
 #include "fem_mesh.h"
 #include "fem_problem.h"
 #include "fem_error_analysis.h"
-#include "math/operators/nodal_mass_builder.h"
-#include "math/operators/nonlocal_kernel.h"
-#include "math/operators/exterior_interaction_model.h"
+#include "math/fem/operators/nodal_mass_builder.h"
+#include "math/fem/operators/nonlocal_kernel.h"
+#include "math/fem/operators/exterior_interaction_model.h"
 #include "math/differential_equation.h"
 #include "geom/geometry_2d.h"
 

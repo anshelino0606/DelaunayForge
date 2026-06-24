@@ -28,7 +28,7 @@ static_assert(default_newmark.is_stable(), "Default Newmark parameters must be s
 static_assert(default_newmark.is_second_order(), "Default Newmark parameters should be second-order accurate");
 
 namespace detail {
-    [[nodiscard]] inline void compute_p1_gradients(
+    inline void compute_p1_gradients(
         const FEMMesh::Node& P0,
         const FEMMesh::Node& P1,
         const FEMMesh::Node& P2,
@@ -220,8 +220,8 @@ struct HeatImplicitEulerIntegratorP1 {
                         Ke[i][j] += (Real)(inv_dt * m_ij);
 
                         if (has_prev) [[likely]] {
-                            const int J = E.v[j];
-                            const double u_prev_j = P.u_prev[(size_t)J];
+                            const Index J = E.v[j];
+                            const double u_prev_j = P.u_prev[to_size(J)];
                             be[i] += (Real)(inv_dt * m_ij * u_prev_j);
                         }
                     }
@@ -329,8 +329,8 @@ struct WaveNewmarkIntegratorP1 {
                     Ke[i][j] += (Real)(inv_beta_dt2 * m_ij);
 
                     if (has_pred && inv_beta_dt2 != 0.0) [[likely]] {
-                        const int J = E.v[j];
-                        const double u_pred_j = P.u_prev[(size_t)J];
+                        const Index J = E.v[j];
+                        const double u_pred_j = P.u_prev[to_size(J)];
                         be[i] += (Real)(inv_beta_dt2 * m_ij * u_pred_j);
                     }
                 }

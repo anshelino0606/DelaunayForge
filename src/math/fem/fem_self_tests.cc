@@ -2,8 +2,6 @@
 #include "fem_mesh.h"
 #include "fem_problem.h"
 #include "fem_assembler.h"
-#include "fem_solve_pipeline.h"
-#include "fem_assemblers_p1.h"
 #include "fem_error_analysis.h"
 #include "math/differential_equation.h"
 #include "math/differential_equation_solution.h"
@@ -32,7 +30,7 @@ static FEMMesh make_structured_mesh(int nx, int ny, double W, double H) {
     for (Index iy = 0; iy <= ny_i; ++iy) {
         for (Index ix = 0; ix <= nx_i; ++ix) {
             const Index id = node_id(ix, iy);
-            m.nodes[id] = {
+            m.nodes[to_size(id)] = {
                 static_cast<double>(ix) * W / static_cast<double>(nx_i),
                 static_cast<double>(iy) * H / static_cast<double>(ny_i),
                 id
@@ -49,17 +47,17 @@ static FEMMesh make_structured_mesh(int nx, int ny, double W, double H) {
             const Index tl = node_id(ix, iy + Index{1});
             const Index tr = node_id(ix + Index{1}, iy + Index{1});
 
-            const double a1x = m.nodes[br].x - m.nodes[bl].x;
-            const double a1y = m.nodes[br].y - m.nodes[bl].y;
-            const double a2x = m.nodes[tl].x - m.nodes[bl].x;
-            const double a2y = m.nodes[tl].y - m.nodes[bl].y;
+            const double a1x = m.nodes[to_size(br)].x - m.nodes[to_size(bl)].x;
+            const double a1y = m.nodes[to_size(br)].y - m.nodes[to_size(bl)].y;
+            const double a2x = m.nodes[to_size(tl)].x - m.nodes[to_size(bl)].x;
+            const double a2y = m.nodes[to_size(tl)].y - m.nodes[to_size(bl)].y;
             const double area1 = 0.5 * std::abs(a1x * a2y - a2x * a1y);
             m.elems.push_back({{bl, br, tl}, area1});
 
-            const double b1x = m.nodes[tl].x - m.nodes[tr].x;
-            const double b1y = m.nodes[tl].y - m.nodes[tr].y;
-            const double b2x = m.nodes[br].x - m.nodes[tr].x;
-            const double b2y = m.nodes[br].y - m.nodes[tr].y;
+            const double b1x = m.nodes[to_size(tl)].x - m.nodes[to_size(tr)].x;
+            const double b1y = m.nodes[to_size(tl)].y - m.nodes[to_size(tr)].y;
+            const double b2x = m.nodes[to_size(br)].x - m.nodes[to_size(tr)].x;
+            const double b2y = m.nodes[to_size(br)].y - m.nodes[to_size(tr)].y;
             const double area2 = 0.5 * std::abs(b1x * b2y - b2x * b1y);
             m.elems.push_back({{tr, tl, br}, area2});
         }
@@ -72,29 +70,27 @@ RobinSlabTestResult run_robin_slab_self_test() {
     RobinSlabTestResult res;
 
     constexpr double kappa = 3.0;
-    constexpr double L     = 2.0;
-    constexpr double H     = 1.0;
-    constexpr double uD0   = 1.0;
-    constexpr double beta  = 5.0;
+    constexpr double L = 2.0;
+    constexpr double H = 1.0;
+    constexpr double uD0 = 1.0;
+    constexpr double beta = 5.0;
     constexpr double g_rob = 7.0;
 
     const double A_exact = (g_rob - beta * uD0) / (kappa + beta * L);
     res.expected_exact_slope = A_exact;
 
     FEMMesh mesh = make_structured_mesh(1, 1, L, H);
-
     mesh.edges_bc.clear();
 
     for (const auto& E : mesh.elems) {
         for (Index li = 0; li < Index{3}; ++li) {
-            const Index ia = E.v[li];
-            const Index ib = E.v[(li + Index{1}) % Index{3}];
+            const Index ia = E.v[to_size(li)];
+            const Index ib = E.v[to_size((li + Index{1}) % Index{3})];
 
-            const auto& Na = mesh.nodes[ia];
-            const auto& Nb = mesh.nodes[ib];
+            const auto& Na = mesh.nodes[to_size(ia)];
+            const auto& Nb = mesh.nodes[to_size(ib)];
 
             const double xmid = 0.5 * (Na.x + Nb.x);
-
             constexpr double eps = 1e-12;
 
             if (std::abs(xmid) < eps) {
@@ -132,10 +128,10 @@ RobinSlabTestResult run_robin_slab_self_test() {
     double max_err = 0.0;
     double got_A = 0.0;
 
-    for (Index i = 0; i < mesh.dof_count(); ++i) {
-        const double x = mesh.nodes[i].x;
+    for (Index i = 0; i < mesh.dof_count_index(); ++i) {
+        const double x = mesh.nodes[to_size(i)].x;
         const double u_exact = A_exact * x + uD0;
-        const double err = std::abs(sol.solution_u[i] - u_exact);
+        const double err = std::abs(sol.solution_u[to_size(i)] - u_exact);
 
         if (err > max_err) {
             max_err = err;
@@ -147,21 +143,20 @@ RobinSlabTestResult run_robin_slab_self_test() {
     Count cnt_l = 0;
     Count cnt_r = 0;
 
-    for (Index i = 0; i < mesh.dof_count(); ++i) {
-        if (mesh.nodes[i].x < 1e-12) {
-            u_left += sol.solution_u[i];
+    for (Index i = 0; i < mesh.dof_count_index(); ++i) {
+        if (mesh.nodes[to_size(i)].x < 1e-12) {
+            u_left += sol.solution_u[to_size(i)];
             ++cnt_l;
         }
 
-        if (std::abs(mesh.nodes[i].x - L) < 1e-12) {
-            u_right += sol.solution_u[i];
+        if (std::abs(mesh.nodes[to_size(i)].x - L) < 1e-12) {
+            u_right += sol.solution_u[to_size(i)];
             ++cnt_r;
         }
     }
 
     if (cnt_l > 0 && cnt_r > 0) {
-        got_A = (u_right / static_cast<double>(cnt_r) -
-                 u_left / static_cast<double>(cnt_l)) / L;
+        got_A = (u_right / static_cast<double>(cnt_r) - u_left / static_cast<double>(cnt_l)) / L;
     }
 
     res.max_abs_err = max_err;
@@ -204,11 +199,11 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
 
         for (const auto& E : mesh.elems) {
             for (Index li = 0; li < Index{3}; ++li) {
-                const Index ia = E.v[li];
-                const Index ib = E.v[(li + Index{1}) % Index{3}];
+                const Index ia = E.v[to_size(li)];
+                const Index ib = E.v[to_size((li + Index{1}) % Index{3})];
 
-                const auto& Na = mesh.nodes[ia];
-                const auto& Nb = mesh.nodes[ib];
+                const auto& Na = mesh.nodes[to_size(ia)];
+                const auto& Nb = mesh.nodes[to_size(ib)];
 
                 constexpr double eps = 1e-12;
 
@@ -241,7 +236,6 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
         assemble_and_solve_local_P1(prob, sol);
 
         ErrorMetrics em = compute_error_metrics<double>(mesh, sol.solution_u, &exact);
-
         const double h = mesh_h_max_edge<double>(mesh);
 
         auto& L = res.levels[lvl];
@@ -300,4 +294,4 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
     return res;
 }
 
-} 
+} // namespace fem

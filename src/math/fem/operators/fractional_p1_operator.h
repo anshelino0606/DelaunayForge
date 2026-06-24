@@ -4,10 +4,10 @@
 #include "math/fem/fem_boundary_adapter.h"
 #include "math/fem/fem_assembler.h"
 #include "math/fem/fem_problem.h"
-#include "math/operators/boundary_load_model.h"
-#include "math/operators/exterior_interaction_model.h"
-#include "math/operators/nodal_mass_builder.h"
-#include "math/operators/nonlocal_kernel.h"
+#include "math/fem/operators/boundary_load_model.h"
+#include "math/fem/operators/exterior_interaction_model.h"
+#include "math/fem/operators/nodal_mass_builder.h"
+#include "math/fem/operators/nonlocal_kernel.h"
 
 #include <algorithm>
 #include <vector>

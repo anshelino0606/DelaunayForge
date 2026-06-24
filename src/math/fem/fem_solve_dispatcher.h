@@ -3,7 +3,6 @@
 
 #include "math/pde/solve_request.h"
 #include "math/fem/fem_mesh.h"
-#include "math/fem/fem_assembler.h"
 #include "math/fem/fem_backend.h"
 #include "math/differential_equation_solution.h"
 

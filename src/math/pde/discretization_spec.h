@@ -10,7 +10,9 @@ enum class DiscretizationBackend : uint8_t {
 };
 
 enum class FEMBasisKind : uint8_t {
-    P1
+    P1,
+    P2,
+    Q1
 };
 
 enum class DirichletPolicy : uint8_t {

@@ -18,9 +18,7 @@
 #include "math/differential_equation.h"
 #include "math/differential_equation_solution.h"
 
-#include "fem_assemblers_p1.h"
 #include "fem_builders_p1.h"
-#include "fem_solve_pipeline.h"
 #include "math/fem/fem_solve_dispatcher.h"
 
 namespace fem {

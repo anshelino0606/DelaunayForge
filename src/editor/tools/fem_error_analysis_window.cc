@@ -21,7 +21,7 @@
 #include "math/fem/fem_energy_metrics.h"
 #include "math/fem/fem_self_tests.h"
 #include "math/fem/fem_problem.h"
-#include "math/fem/fem_assemblers_p1.h"
+#include "math/fem/fem_assembler.h"
 
 namespace fem {
 

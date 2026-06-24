@@ -6,7 +6,6 @@
 #include "geom/mesh_component.h"
 #include "math/entities/planar_math_entity.h"
 #include "core/entity/entity.h"
-#include "math/fem/dirichlet_map.h"
 #include "math/fem/fem_solve_dispatcher.h"
 #include "math/pde/pde_solve_request_builder.h"
 #include "math/fem/fem_boundary_adapter.h"
@@ -92,7 +91,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                 }
             }
 
-            const DirichletData D = build_dirichlet_data(fem_mesh);
+            const DirichletData D = build_dirichlet_mask(fem_mesh);
             for (int i = 0; i < N; ++i) {
                 if (D.is_dirichlet[(size_t)i]) {
                     cached_sol.solution.solution_u[(size_t)i] = D.value[(size_t)i];
@@ -121,7 +120,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                     }
                 }
 
-                const DirichletData D = build_dirichlet_data(fem_mesh);
+                const DirichletData D = build_dirichlet_mask(fem_mesh);
                 for (int i = 0; i < N; ++i) {
                     if (D.is_dirichlet[(size_t)i]) {
                         cached_sol.transient_v[(size_t)i] = 0.0;
@@ -205,7 +204,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                     }
 
                     // Clamp wave state at Dirichlet nodes.
-                    const DirichletData D = build_dirichlet_data(fem_mesh);
+                    const DirichletData D = build_dirichlet_mask(fem_mesh);
                     for (int i = 0; i < N; ++i) {
                         if (D.is_dirichlet[(size_t)i]) {
                             cached_sol.transient_v[(size_t)i] = 0.0;

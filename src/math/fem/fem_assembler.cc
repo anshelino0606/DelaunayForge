@@ -1,18 +1,16 @@
 // fem_assembler.cpp
 #include "fem_assembler.h"
-#include <unordered_map>
 #include <algorithm>
 #include <cmath>
-#include <ranges>
-#include "fem_simulation.h"
+#include <tuple>
 #include "fem_problem.h"
 #include "math/differential_equation_solution.h"
 #include "fem_fractional_spectral_p1.h"
 #include "fem_assembler_generic.h"
 #include "fem_integrators.h"
-#include "fem_solve_pipeline.h"
 #include "math/fem/fem_boundary_adapter.h"
-#include "math/operators/fractional_p1_operator.h"
+#include "math/fem/operators/fractional_p1_operator.h"
+#include "fem_solver_cg.h"
 
 namespace fem {
 
@@ -44,6 +42,20 @@ CRS build_crs_from_triplets(Index n, std::vector<Triplet> T) {
     }
     while (cur_row < n) row_ptr[to_size(++cur_row)] = to_index(col_idx.size());
     return CRS{ std::move(row_ptr), std::move(col_idx), std::move(vals) };
+}
+
+
+void fill_solution(const FEMSystem& sys, DifferentialEquationSolution& out) {
+    out.solution_u = sys.x;
+    if (out.solution_u.empty()) {
+        out.u_min = 0.0;
+        out.u_max = 0.0;
+        return;
+    }
+
+    auto [mn, mx] = std::minmax_element(out.solution_u.begin(), out.solution_u.end());
+    out.u_min = *mn;
+    out.u_max = *mx;
 }
 
 
@@ -99,26 +111,10 @@ void apply_dirichlet_elimination(FEMSystem& S, const FEMMesh&,
     }
 }
 
-void apply_dirichlet_elimination(FEMSystem& S, const FEMMesh& M,
-                                 const std::vector<std::tuple<int,double>>& legacy_D)
-{
-    DirichletMask D;
-    D.is_dirichlet.assign(S.b.size(), 0);
-    D.value.assign(S.b.size(), 0.0);
-
-    for (const auto& [node, val] : legacy_D) {
-        const Index i = to_index_or_invalid(node);
-        if (!is_valid(i, S.b.size())) continue;
-        D.is_dirichlet[to_size(i)] = 1;
-        D.value[to_size(i)] = val;
-    }
-
-    apply_dirichlet_elimination(S, M, D);
-}
 
 FEMSystem assemble_fractional_laplacian_P1(const FEMProblem& P,
                                            double s,
-                                           double C_scale = 1.0)
+                                           double C_scale)
 {
     return assemble_fractional_integral_laplacian_P1(P, FractionalIntegralSpec{s, C_scale});
 }
@@ -178,6 +174,51 @@ FEMSystem assemble_and_solve_operator_P1(
 
 FEMSystem assemble_and_solve_spectral_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
     return assemble_and_solve_fractional_spectral_P1(P, out);
+}
+
+static FEMSystem assemble_and_solve_with(
+    const FEMProblem& P,
+    FEMSystem (*assemble)(const FEMProblem&),
+    DifferentialEquationSolution& out
+) {
+    out.invalidate();
+    FEMSystem sys;
+    if (!P.mesh || !assemble) {
+        return sys;
+    }
+
+    sys = assemble(P);
+    solve_linear_system(sys);
+    fill_solution(sys, out);
+    return sys;
+}
+
+FEMSystem assemble_and_solve_local_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_poisson_P1, out);
+}
+
+FEMSystem assemble_and_solve_heat_implicit_euler_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_heat_implicit_euler_P1, out);
+}
+
+FEMSystem assemble_and_solve_wave_newmark_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_with(P, &assemble_wave_newmark_P1, out);
+}
+
+FEMSystem assemble_and_solve_fractional_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
+}
+
+FEMSystem assemble_and_solve_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
+}
+
+FEMSystem assemble_and_solve_fractional_auto_P1(const FEMProblem& P, DifferentialEquationSolution& out) {
+    out.invalidate();
+    if (!P.mesh || std::holds_alternative<LocalEllipticSpec>(P.operator_spec())) {
+        return {};
+    }
+    return assemble_and_solve_operator_P1(P, P.operator_spec(), out);
 }
 
 void solve_linear_system(FEMSystem& sys) {

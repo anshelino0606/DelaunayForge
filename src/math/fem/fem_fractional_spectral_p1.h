@@ -3,11 +3,11 @@
 
 #include "fem_problem.h"
 #include "fem_mesh.h"
+#include "fem_assembler.h"
+#include "fem_boundary_adapter.h"
 #include "fem_quadrature.h"
-#include "dirichlet_map.h"
 #include "math/fractional_equation_config.h"
 #include "math/differential_equation_solution.h"
-#include "fem_solve_pipeline.h"
 #include "fem_dense_linalg.h"
 #include "log_categories.h"
 
@@ -42,23 +42,23 @@ static inline void compute_p1_gradients(
 }
 
 struct DofSplit {
-    std::vector<int> free;  ///< global indices of free DOFs
-    std::vector<int> dir;   ///< global indices of Dirichlet DOFs
-    std::vector<int> g2l;   ///< global->local mapping (-1 for Dirichlet)
+    std::vector<Index> free;
+    std::vector<Index> dir;
+    std::vector<int> g2l;
 };
 
-static inline DofSplit split_dofs_dirichlet(const FEMMesh& M, const DirichletData& D) {
-    const int N = M.dof_count();
+static inline DofSplit split_dofs_dirichlet(const FEMMesh& M, const DirichletMask& D) {
+    const Index N = M.dof_count_index();
     DofSplit s;
-    s.g2l.assign(N, -1);
-    s.free.reserve(N);
-    s.dir.reserve(N);
+    s.g2l.assign(to_size(N), -1);
+    s.free.reserve(to_size(N));
+    s.dir.reserve(to_size(N));
 
-    for (int i = 0; i < N; ++i) {
-        if (D.is_dirichlet[static_cast<size_t>(i)]) [[unlikely]] {
+    for (Index i = 0; i < N; ++i) {
+        if (D.contains(i)) [[unlikely]] {
             s.dir.push_back(i);
         } else {
-            s.g2l[i] = static_cast<int>(s.free.size());
+            s.g2l[to_size(i)] = static_cast<int>(s.free.size());
             s.free.push_back(i);
         }
     }
@@ -107,21 +107,21 @@ static inline void assemble_local_dense_P1(
             const double dV = TriQuad3::w[q] * E.area;
 
             for (int i = 0; i < 3; ++i) {
-                const int I = E.v[i];
+                const Index I = E.v[i];
                 b[static_cast<size_t>(I)] += fq * Nq[i] * dV;
 
                 for (int j = 0; j < 3; ++j) {
-                    const int J = E.v[j];
+                    const Index J = E.v[j];
                     const double gdot = grad[i][0] * grad[j][0] + grad[i][1] * grad[j][1];
 
                     // Mass: ∫ φ_i φ_j
-                    Mmat(I, J) += Nq[i] * Nq[j] * dV;
+                    Mmat(static_cast<int>(I), static_cast<int>(J)) += Nq[i] * Nq[j] * dV;
                     if (!c_is_zero) {
                         const double cq = static_cast<double>(P.c(x, y));
-                        Cmat(I, J) += cq * Nq[i] * Nq[j] * dV;
+                        Cmat(static_cast<int>(I), static_cast<int>(J)) += cq * Nq[i] * Nq[j] * dV;
                     }
                     // Stiffness: ∫ a ∇φ_i·∇φ_j
-                    K(I, J) += aq * gdot * dV;
+                    K(static_cast<int>(I), static_cast<int>(J)) += aq * gdot * dV;
                 }
             }
         }
@@ -169,10 +169,10 @@ static inline DenseMat extract_ff(const DenseMat& A, const DofSplit& s) {
     const int n = static_cast<int>(s.free.size());
     DenseMat Af(n);
     for (int ii = 0; ii < n; ++ii) {
-        const int I = s.free[static_cast<size_t>(ii)];
+        const Index I = s.free[static_cast<size_t>(ii)];
         for (int jj = 0; jj < n; ++jj) {
-            const int J = s.free[static_cast<size_t>(jj)];
-            Af(ii, jj) = A(I, J);
+            const Index J = s.free[static_cast<size_t>(jj)];
+            Af(ii, jj) = A(static_cast<int>(I), static_cast<int>(J));
         }
     }
     return Af;
@@ -185,11 +185,11 @@ static inline std::vector<double> extract_fd_rect(
     const int nd = static_cast<int>(s.dir.size());
     std::vector<double> Afd(static_cast<size_t>(n) * static_cast<size_t>(nd), 0.0);
     for (int ii = 0; ii < n; ++ii) {
-        const int I = s.free[static_cast<size_t>(ii)];
+        const Index I = s.free[static_cast<size_t>(ii)];
         const size_t row = static_cast<size_t>(ii) * static_cast<size_t>(nd);
         for (int jd = 0; jd < nd; ++jd) {
-            const int J = s.dir[static_cast<size_t>(jd)];
-            Afd[row + static_cast<size_t>(jd)] = A(I, J);
+            const Index J = s.dir[static_cast<size_t>(jd)];
+            Afd[row + static_cast<size_t>(jd)] = A(static_cast<int>(I), static_cast<int>(J));
         }
     }
     return Afd;
@@ -199,7 +199,7 @@ static inline std::vector<double> extract_fvec(const std::vector<double>& v, con
     const int n = static_cast<int>(s.free.size());
     std::vector<double> vf(static_cast<size_t>(n), 0.0);
     for (int ii = 0; ii < n; ++ii) {
-        vf[static_cast<size_t>(ii)] = v[static_cast<size_t>(s.free[static_cast<size_t>(ii)])];
+        vf[static_cast<size_t>(ii)] = v[to_size(s.free[static_cast<size_t>(ii)])];
     }
     return vf;
 }
@@ -251,7 +251,7 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
     assemble_local_dense_P1(P, K, Mmat, Cmat, b, c_is_zero);
 
     // Split DOFs into free and Dirichlet
-    const DirichletData D = build_dirichlet_data(mesh);
+    const DirichletData D = build_dirichlet_mask(mesh);
     DofSplit s = split_dofs_dirichlet(mesh, D);
 
     const int n = static_cast<int>(s.free.size());
@@ -263,9 +263,9 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
     // Extract and set Dirichlet values
     std::vector<double> g_d(static_cast<size_t>(nd), 0.0);
     for (int jd = 0; jd < nd; ++jd) {
-        const int gi = s.dir[static_cast<size_t>(jd)];
-        g_d[static_cast<size_t>(jd)] = D.value[static_cast<size_t>(gi)];
-        sys.x[static_cast<size_t>(gi)] = g_d[static_cast<size_t>(jd)];
+        const Index gi = s.dir[static_cast<size_t>(jd)];
+        g_d[static_cast<size_t>(jd)] = D.value[to_size(gi)];
+        sys.x[to_size(gi)] = g_d[static_cast<size_t>(jd)];
     }
 
     if (n == 0) [[unlikely]] {
@@ -427,8 +427,8 @@ inline FEMSystem assemble_and_solve_fractional_spectral_P1(
         double sum = 0.0;
         for (int k = 0; k < use_k; ++k)
             sum += Phi(li, k) * u_hat[static_cast<size_t>(k)];
-        const int gi = s.free[static_cast<size_t>(li)];
-        sys.x[static_cast<size_t>(gi)] = sum +
+        const Index gi = s.free[static_cast<size_t>(li)];
+        sys.x[to_size(gi)] = sum +
             (has_inhom_dir ? g_f[static_cast<size_t>(li)] : 0.0);
     }
 

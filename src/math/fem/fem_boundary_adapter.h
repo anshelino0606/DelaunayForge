@@ -7,7 +7,6 @@
 #include "math/types.h"
 
 #include <algorithm>
-#include <tuple>
 #include <vector>
 
 namespace fem {
@@ -98,20 +97,6 @@ using DirichletData = DirichletMask;
 
 [[nodiscard]] inline DirichletMask build_dirichlet_mask(const FEMMesh& mesh) {
     return build_dirichlet_mask(make_boundary_model(mesh), mesh.dof_count_count());
-}
-
-[[nodiscard]] inline std::vector<std::tuple<int, double>>
-make_dirichlet_set(const BoundaryModel& boundary, int dof_count) {
-    const Count N = dof_count < 0 ? Count{0} : static_cast<Count>(dof_count);
-    const DirichletMask mask = build_dirichlet_mask(boundary, N);
-
-    std::vector<std::tuple<int, double>> dirichlet;
-    dirichlet.reserve(mask.is_dirichlet.size());
-    for (Index i = 0; i < static_cast<Index>(mask.is_dirichlet.size()); ++i) {
-        if (!mask.is_dirichlet[to_size(i)]) continue;
-        dirichlet.emplace_back(static_cast<int>(i), mask.value[to_size(i)]);
-    }
-    return dirichlet;
 }
 
 

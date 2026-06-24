@@ -54,7 +54,7 @@ struct ExteriorInteractionModel {
 
         for (Index i = 0; i < N; ++i) {
             const auto& node = mesh.nodes[to_size(i)];
-            double boundary_distance = std::numeric_limits<double>::infinity();
+            double boundary_distance = std::numeric_limits<double>::max();
 
             for (const auto& edge : mesh.edges_bc) {
                 if (!is_valid(edge.a, mesh.nodes.size()) || !is_valid(edge.b, mesh.nodes.size())) continue;
@@ -66,7 +66,7 @@ struct ExteriorInteractionModel {
                 );
             }
 
-            if (!std::isfinite(boundary_distance)) continue;
+            if (boundary_distance == std::numeric_limits<double>::max()) continue;
             const double delta = std::max(boundary_distance, min_distance);
             const double exterior_tail = (Math::pi / s) * std::pow(delta, -2.0 * s);
             diag[to_size(i)] = scale * nodal_mass[to_size(i)] * exterior_tail;

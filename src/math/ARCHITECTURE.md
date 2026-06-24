@@ -3,14 +3,14 @@
 ```mermaid
 flowchart LR
     UI[PDEComponent] --> Req[build SolveRequest]
-    Req --> PDE[pde/
-model + operator + boundary + request]
-    PDE --> FEM[fem/
-solve(request, mesh)]
-    FEM --> Assembly[P1 assembly]
-    Assembly --> Ops[operators/
-reusable kernels]
-    Assembly --> Solver[CG / dense / spectral]
+    Req --> PDE[pde/model + operator + boundary + request]
+    PDE --> FEM[fem/solve request + mesh]
+    FEM --> Basis[fem_discretization_dispatch]
+    Basis --> P1[P1 assembly family]
+    Basis -. later .-> P2[P2 assembly family]
+    Basis -. later .-> Q1[Q1 assembly family]
+    P1 --> FEMOps[fem/operators]
+    P1 --> Solver[CG / dense / spectral]
     Solver --> Sol[solution]
 ```
 
@@ -20,6 +20,7 @@ flowchart TD
     SolveRequest --> OperatorSpec
     SolveRequest --> BoundaryModel
     SolveRequest --> DiscretizationSpec
+    DiscretizationSpec --> Basis[FEMBasisKind]
     OperatorSpec --> LocalEllipticSpec
     OperatorSpec --> FractionalIntegralSpec
     OperatorSpec --> FractionalRegionalSpec
@@ -28,11 +29,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    OperatorSpec --> Dispatch{fem::solve_fem}
-    Dispatch --> Local[local sparse P1]
-    Dispatch --> Integral[fractional integral P1]
-    Dispatch --> Regional[fractional regional P1]
-    Dispatch --> Spectral[spectral modal path]
+    femsolve[fem::solve] --> fembackend[solve_fem]
+    fembackend --> basis[assemble_and_solve_for_basis]
+    basis --> p1[assemble_and_solve_P1]
+    p1 --> Local[local sparse P1]
+    p1 --> Integral[fractional integral P1]
+    p1 --> Regional[fractional regional P1]
+    p1 --> Spectral[spectral modal P1]
     Integral -. large N .-> MatrixFree[FractionalMatrixFreeP1Operator]
     Regional -. large N .-> MatrixFree
 ```
@@ -40,8 +43,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     BoundaryModel --> Mask[DirichletMask]
-    Mask --> Assembly[emit diagonal during assembly]
-    Mask --> Rebuild[legacy CRS rebuild elimination]
+    Mask --> Assembly[emit diagonal / eliminate once]
     BoundaryModel --> Natural[BoundaryLoadModel]
     Natural --> Neumann
     Natural --> Robin
@@ -49,8 +51,8 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    types[types.h
-Real, Index:uint32_t, Count:uint32_t] --> pde
+    types[types.h\nReal, Index:uint32_t, Count:uint32_t] --> pde
     types --> fem
-    types --> operators
+    types --> femops[fem/operators]
+    linop[operators/LinearOperator] --> femops
 ```
