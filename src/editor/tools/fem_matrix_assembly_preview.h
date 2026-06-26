@@ -3,10 +3,7 @@
 
 #include <cstdint>
 #include <concepts>
-#include <limits>
 #include <vector>
-#include <span>
-#include <algorithm>
 
 namespace fem {
 

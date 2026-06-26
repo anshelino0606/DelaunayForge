@@ -77,25 +77,25 @@ void PlanarMeshGeneratorWindow::draw_parametric_controls(const PlanarMeshGenerat
         // Set sensible defaults for each preset
         switch (cfg.preset) {
             case ParametricPreset::Circle:
-                cfg.a = 100.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
+                cfg.a = 100.0; cfg.t_start = 0.0; cfg.t_end = 2*math::PI;
                 break;
             case ParametricPreset::Ellipse:
-                cfg.a = 150.0; cfg.b = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
+                cfg.a = 150.0; cfg.b = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*math::PI;
                 break;
             case ParametricPreset::Cardioid:
-                cfg.a = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
+                cfg.a = 80.0; cfg.t_start = 0.0; cfg.t_end = 2*math::PI;
                 break;
             case ParametricPreset::Lemniscate:
-                cfg.a = 100.0; cfg.t_start = -Math::PI; cfg.t_end = Math::PI;
+                cfg.a = 100.0; cfg.t_start = -math::PI; cfg.t_end = math::PI;
                 break;
             case ParametricPreset::Epicycloid:
-                cfg.a = 100.0; cfg.b = 30.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
+                cfg.a = 100.0; cfg.b = 30.0; cfg.t_start = 0.0; cfg.t_end = 2*math::PI;
                 break;
             case ParametricPreset::Hypocycloid:
-                cfg.a = 120.0; cfg.b = 40.0; cfg.t_start = 0.0; cfg.t_end = 2*Math::PI;
+                cfg.a = 120.0; cfg.b = 40.0; cfg.t_start = 0.0; cfg.t_end = 2*math::PI;
                 break;
             case ParametricPreset::Spiral:
-                cfg.a = 20.0; cfg.b = 5.0; cfg.t_start = 0.0; cfg.t_end = 6*Math::PI;
+                cfg.a = 20.0; cfg.b = 5.0; cfg.t_start = 0.0; cfg.t_end = 6*math::PI;
                 break;
             case ParametricPreset::Custom:
                 cfg.custom_x_expr = "a*cos(t)";
@@ -256,8 +256,8 @@ void PlanarMeshGeneratorWindow::draw_parametric_controls(const PlanarMeshGenerat
     float t_start_f = (float)cfg.t_start;
     float t_end_f = (float)cfg.t_end;
     
-    params_changed |= ImGui::SliderFloat("t start", &t_start_f, -4.0f*(float)Math::F_PI, 4.0f*(float)Math::F_PI, "%.3f");
-    params_changed |= ImGui::SliderFloat("t end", &t_end_f, -4.0f*(float)Math::F_PI, 8.0f*(float)Math::F_PI, "%.3f");
+    params_changed |= ImGui::SliderFloat("t start", &t_start_f, -4.0f*(float)math::F_PI, 4.0f*(float)math::F_PI, "%.3f");
+    params_changed |= ImGui::SliderFloat("t end", &t_end_f, -4.0f*(float)math::F_PI, 8.0f*(float)math::F_PI, "%.3f");
     
     cfg.t_start = t_start_f;
     cfg.t_end = t_end_f;

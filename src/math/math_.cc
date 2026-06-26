@@ -2,14 +2,20 @@
 #include <cmath>
 #include <algorithm>
 
-namespace fem {
+namespace fem::math {
 
-double Math::safe_acos(double x) {
+double safe_acos(double x) {
     return std::acos(std::clamp(x, -1.0, 1.0));
 }
 
-bool Math::equals(double x, double y, double epsilon) {
+bool equals(double x, double y, double epsilon) {
     return std::abs(x - y) < epsilon;
+}
+
+int32_t sign_eps(double value, double epsilon) {
+    if (value > epsilon) return 1;
+    if (value < -epsilon) return -1;
+    return 0;
 }
 
 }

@@ -6,7 +6,8 @@
 #include <cmath>
 #include <algorithm>
 #include "math/density_functions.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/predicate.h"
+#include "geom/geom2d/tri.h"
 #include <iostream>
 #include "log_categories.h"
 
@@ -231,7 +232,7 @@ DelaunayTriangulationResult GPUDelaunayTriangulator::triangulate_hybrid(
             glm::dvec2 b = points[new_tri.v[1]].p;
             glm::dvec2 c = points[new_tri.v[2]].p;
             
-            if (Geometry2D::orient_sign(a, b, c) < 0) {
+            if (geom2d::pred::orient_sign(a, b, c) < 0) {
                 std::swap(new_tri.v[0], new_tri.v[1]);
             }
             
@@ -413,7 +414,7 @@ DelaunayTriangulationResult GPUDelaunayTriangulator::triangulate_with_boundaries
             const auto& B = R.points[t.v[1]];
             const auto& C = R.points[t.v[2]];
 
-            glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+            glm::dvec2 c = geom2d::tri::centroid(A, B, C);
             if (!inside_outer(c.x, c.y)) continue;
 
             bool in_hole = false;

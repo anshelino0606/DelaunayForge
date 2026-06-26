@@ -4,24 +4,22 @@
 #include <numbers>
 #include "math/types.h"
 
-namespace fem {
+namespace fem::math {
 
-class Math {
-public:
-    static constexpr double DMIN = std::numeric_limits<double>::lowest();
-    static constexpr double DMAX = std::numeric_limits<double>::max();
-    static constexpr double DNAN = std::numeric_limits<double>::quiet_NaN();
-    static constexpr double DINF = std::numeric_limits<double>::infinity();
+constexpr double DMIN = std::numeric_limits<double>::lowest();
+constexpr double DMAX = std::numeric_limits<double>::max();
+constexpr double DNAN = std::numeric_limits<double>::quiet_NaN();
+constexpr double DINF = std::numeric_limits<double>::infinity();
 
-    static constexpr double PI = std::numbers::pi;
-    static constexpr float F_PI = std::numbers::pi_v<float>;
-    static constexpr double E = std::numbers::e;
-    static constexpr double pi = std::numbers::pi_v<double>;
-    static constexpr double two_pi = 2.0 * pi;
+constexpr double PI = std::numbers::pi;
+constexpr float F_PI = std::numbers::pi_v<float>;
+constexpr double E = std::numbers::e;
+constexpr double TWO_PI = 2.0 * PI;
 
-    // Clamps x value in range [-1; 1] before acos
-    static double safe_acos(double x);
-    static bool equals(double x, double y, double epsilon = 1e-12);
-};
+// Clamps x value in range [-1; 1] before acos
+double safe_acos(double x);
+bool equals(double x, double y, double epsilon = 1e-12);
+
+int32_t sign_eps(double value, double epsilon = 1e-9);
 
 }

@@ -174,12 +174,12 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
     constexpr int nLevels = 5;
 
     auto u_exact = [&](double x, double y) -> double {
-        return std::sin(Math::PI * x) * std::sin(Math::PI * y);
+        return std::sin(math::PI * x) * std::sin(math::PI * y);
     };
 
     auto grad_exact = [&](double x, double y, double& ux, double& uy) -> bool {
-        ux = Math::PI * std::cos(Math::PI * x) * std::sin(Math::PI * y);
-        uy = Math::PI * std::sin(Math::PI * x) * std::cos(Math::PI * y);
+        ux = math::PI * std::cos(math::PI * x) * std::sin(math::PI * y);
+        uy = math::PI * std::sin(math::PI * x) * std::cos(math::PI * y);
         return true;
     };
 
@@ -229,7 +229,7 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
         prob.a = kappa;
         prob.c = 0.0;
         prob.f = [=](double x, double y) -> double {
-            return kappa * 2.0 * Math::PI * Math::PI * std::sin(Math::PI * x) * std::sin(Math::PI * y);
+            return kappa * 2.0 * math::PI * math::PI * std::sin(math::PI * x) * std::sin(math::PI * y);
         };
 
         DifferentialEquationSolution sol;

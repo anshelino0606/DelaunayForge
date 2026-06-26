@@ -1,7 +1,7 @@
 #ifndef FEM_PARAMETRIC_CURVE_H
 #define FEM_PARAMETRIC_CURVE_H
 
-#include "geometry_2d.h"
+#include "geom/common_types_2d.h"
 #include <string>
 #include <optional>
 

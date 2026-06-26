@@ -1,7 +1,9 @@
 #include "canvas_inspector.h"
 
 #include "geom/delaunay/delaunay_types.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/tri.h"
+#include "geom/geom2d/vec.h"
+#include "geom/geom2d/segment.h"
 
 #include <algorithm>
 #include <vector>
@@ -61,7 +63,7 @@ int CanvasInspector::pick_vertex_(const DelaunayTriangulationResult& R, const gl
     double best_d2 = r2;
 
     for (int i = 0; i < (int)R.points.size(); ++i) {
-        const double d2 = Geometry2D::dist2(p, R.points[i].p);
+        const double d2 = geom2d::vec::dist2(p, R.points[i].p);
         if (d2 <= best_d2) {
             best_d2 = d2;
             best = i;
@@ -81,7 +83,7 @@ int CanvasInspector::pick_edge_(const DelaunayTriangulationResult& R, const glm:
         const Point2D& a = R.points[E.a];
         const Point2D& b = R.points[E.b];
 
-        const double d2 = Geometry2D::point_segment_dist2(p, a, b);
+        const double d2 = geom2d::segment::point_segment_dist2(p, a, b);
         if (d2 <= best_d2) {
             best_d2 = d2;
             best = i;
@@ -99,7 +101,7 @@ int CanvasInspector::pick_triangle_(const DelaunayTriangulationResult& R, const 
         const Point2D& b = R.points[T.v[1]];
         const Point2D& c = R.points[T.v[2]];
 
-        if (Geometry2D::point_in_triangle(p, a, b, c))
+        if (geom2d::tri::point_in_triangle(p, a, b, c))
             return i;
     }
     return -1;
@@ -228,8 +230,8 @@ void CanvasInspector::draw_triangle_(const DelaunayTriangulationResult& R, int t
     const Point2D& b = R.points[T.v[1]];
     const Point2D& c = R.points[T.v[2]];
 
-    ImGui::Text("Area: %.6f", Geometry2D::tri_area(a, b, c));
-    ImGui::Text("Min angle: %.3f deg", Geometry2D::min_angle_deg(a, b, c));
+    ImGui::Text("Area: %.6f", geom2d::tri::area(a, b, c));
+    ImGui::Text("Min angle: %.3f deg", geom2d::tri::min_angle_deg(a, b, c));
 
     ImGui::Separator();
     if (!R.tri_neighbors.empty() && (size_t)tid < R.tri_neighbors.size()) {

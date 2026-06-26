@@ -14,7 +14,7 @@
 #include "math/fem/operators/nonlocal_kernel.h"
 #include "math/fem/operators/exterior_interaction_model.h"
 #include "math/differential_equation.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/tri.h"
 #include "math/math_.h"
 
 namespace fem {
@@ -178,10 +178,10 @@ inline double compute_dirichlet_boundary_work(
     }
 
     // Bounding box for outward-normal classification
-    double xmin =  Math::DINF;
-    double xmax = -Math::DINF;
-    double ymin =  Math::DINF;
-    double ymax = -Math::DINF;
+    double xmin =  math::DINF;
+    double xmax = -math::DINF;
+    double ymin =  math::DINF;
+    double ymax = -math::DINF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x); xmax = std::max(xmax, nd.x);
         ymin = std::min(ymin, nd.y); ymax = std::max(ymax, nd.y);
@@ -318,7 +318,7 @@ inline double compute_classical_bilinear_energy(
             guy += u[(size_t)E.v[i]] * grad_phi[i][1];
         }
 
-        glm::dvec2 c = Geometry2D::tri_centroid(P0.x, P0.y, P1.x, P1.y, P2.x, P2.y);
+        glm::dvec2 c = geom2d::tri::centroid(P0.x, P0.y, P1.x, P1.y, P2.x, P2.y);
 
         energy += static_cast<double>(kappa(c.x, c.y)) * (gux*gux + guy*guy) * E.area;
     }
@@ -326,8 +326,8 @@ inline double compute_classical_bilinear_energy(
 }
 
 inline double mesh_bbox_width(const FEMMesh& mesh) {
-    double xmin =  Math::DINF;
-    double xmax = -Math::DINF;
+    double xmin =  math::DINF;
+    double xmax = -math::DINF;
     for (const auto& nd : mesh.nodes) {
         xmin = std::min(xmin, nd.x);
         xmax = std::max(xmax, nd.x);

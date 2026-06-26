@@ -5,7 +5,7 @@
 #include "math/p1_element_2d.h"
 #include "math/fractional_integral_operator.h"
 #include "geom/delaunay/delaunay_types.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/vec.h"
 
 #include <algorithm>
 
@@ -129,7 +129,7 @@ void MeshElementInfoWindow::draw_edge_(const DelaunayTriangulationResult& R, int
     const Point2D& A = R.points[E.a];
     const Point2D& B = R.points[E.b];
 
-    const double L = Geometry2D::hypot(A, B);
+    const double L = geom2d::vec::hypot(A, B);
 
     ImGui::Text("Edge: %d", eid);
     ImGui::Text("Endpoints: (%d, %d)", E.a, E.b);

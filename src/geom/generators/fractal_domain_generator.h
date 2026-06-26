@@ -1,7 +1,7 @@
 #ifndef FEM_FRACTAL_DOMAIN_GENERATOR_H
 #define FEM_FRACTAL_DOMAIN_GENERATOR_H
 
-#include "geometry_2d.h"
+#include "geom/common_types_2d.h"
 #include <glm/glm.hpp>
 #include <optional>
 #include <string>

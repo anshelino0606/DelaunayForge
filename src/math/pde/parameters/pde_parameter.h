@@ -25,7 +25,7 @@ protected:
     double offset_        = 0.0;
 
     double calc_dynamic_value(double t, double value) const {
-        return value + offset_ + amplitude_ * std::sin(Math::two_pi * frequency_hz_ * t + phase_rad_);
+        return value + offset_ + amplitude_ * std::sin(math::TWO_PI * frequency_hz_ * t + phase_rad_);
     }
 };
 

@@ -177,8 +177,8 @@ std::optional<std::vector<Point2D>> ParametricCurveTool::generate_custom(
     vars["a"] = a;
     vars["b"] = b;
     vars["c"] = c;
-    vars["pi"] = Math::PI;
-    vars["e"] = Math::E;
+    vars["pi"] = math::PI;
+    vars["e"] = math::E;
 
     for (int i = 0; i < sample_count; ++i) {
         double t = t_start + i * dt;

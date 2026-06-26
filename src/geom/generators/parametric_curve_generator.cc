@@ -156,8 +156,8 @@ std::optional<std::string> ParametricCurveGenerator::generate_custom(
     vars["a"] = config.a;
     vars["b"] = config.b;
     vars["c"] = config.c;
-    vars["pi"] = Math::PI;
-    vars["e"] = Math::E;
+    vars["pi"] = math::PI;
+    vars["e"] = math::E;
 
     for (int i = 0; i < config.sample_count; ++i) {
         double t = config.t_start + i * dt;

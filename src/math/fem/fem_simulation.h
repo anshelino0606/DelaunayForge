@@ -10,9 +10,6 @@
 #include "math/differential_equation.h"
 #include "math/differential_equation_solution.h"
 
-#include "fem_assemblers_p1.h"
-#include "fem_solve_pipeline.h"
-
 namespace fem {
 
 struct FEMConfig {

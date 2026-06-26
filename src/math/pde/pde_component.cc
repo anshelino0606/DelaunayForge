@@ -382,8 +382,8 @@ const DifferentialEquationSolution& PDEComponent::solve_combined_domain() {
     solution_.solution_u.reserve(mesh_comps.size() * 1000);
 
     bool any_valid = false;
-    double combined_min = Math::DMAX;
-    double combined_max = Math::DMIN;
+    double combined_min = math::DMAX;
+    double combined_max = math::DMIN;
 
     for (MeshComponent* mesh_comp : mesh_comps) {
         const auto& sub_solution = solve(mesh_comp);
@@ -453,8 +453,8 @@ std::pair<double, double> PDEComponent::get_global_bounds() const noexcept {
         return {cached_global_min_, cached_global_max_};
     }
 
-    double global_min = Math::DMAX;
-    double global_max = Math::DMIN;
+    double global_min = math::DMAX;
+    double global_max = math::DMIN;
 
     if (solution_.is_ready()) [[unlikely]] {
         global_min = solution_.u_min;

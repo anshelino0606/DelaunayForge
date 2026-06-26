@@ -3,7 +3,6 @@
 #include "planar_mesh_inner_boundary.h"
 #include "geom/generators/fractal_domain_generator.h"
 #include "geom/generators/parametric_curve_generator.h"
-#include "geom/geometry_2d.h"
 #include "math/boundary_condition.h"
 #include "math/fem/fem_mesh_builder.h"
 #include "math/pde/pde_component.h"
@@ -11,222 +10,17 @@
 #include "core/entity/entity.h"
 #include "renderer/device.h"
 #include "log_categories.h"
+#include "geom/geom2d/loop.h"
+#include "geom/geom2d/query.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include "log_categories.h"
-#include <limits>
 #include <random>
 #include <LLGL/Utils/VertexFormat.h>
 
 namespace fem {
 
 namespace {
-
-constexpr double kLoopValidationEps = 1e-9;
-
-struct LoopBounds {
-    double xmin = Math::DMAX;
-    double xmax = Math::DMIN;
-    double ymin = Math::DMAX;
-    double ymax = Math::DMIN;
-
-    [[nodiscard]] bool valid() const {
-        return xmin <= xmax && ymin <= ymax;
-    }
-};
-
-[[nodiscard]] int sign_eps(double value, double eps = kLoopValidationEps) {
-    if (value > eps) return 1;
-    if (value < -eps) return -1;
-    return 0;
-}
-
-[[nodiscard]] double point_segment_distance_sq(
-    const glm::dvec2& p,
-    const glm::dvec2& a,
-    const glm::dvec2& b
-) {
-    const glm::dvec2 ab = b - a;
-    const double denom = glm::dot(ab, ab);
-    if (denom <= kLoopValidationEps) {
-        return glm::dot(p - a, p - a);
-    }
-
-    const double t = std::clamp(glm::dot(p - a, ab) / denom, 0.0, 1.0);
-    const glm::dvec2 q = a + t * ab;
-    return glm::dot(p - q, p - q);
-}
-
-[[nodiscard]] bool point_on_segment(
-    const glm::dvec2& p,
-    const glm::dvec2& a,
-    const glm::dvec2& b,
-    double eps = kLoopValidationEps
-) {
-    if (std::abs(Geometry2D::orient(a, b, p)) > eps) return false;
-
-    const double xmin = std::min(a.x, b.x) - eps;
-    const double xmax = std::max(a.x, b.x) + eps;
-    const double ymin = std::min(a.y, b.y) - eps;
-    const double ymax = std::max(a.y, b.y) + eps;
-    return p.x >= xmin && p.x <= xmax && p.y >= ymin && p.y <= ymax;
-}
-
-[[nodiscard]] bool segments_intersect_or_touch(
-    const glm::dvec2& a,
-    const glm::dvec2& b,
-    const glm::dvec2& c,
-    const glm::dvec2& d,
-    double eps = kLoopValidationEps
-) {
-    const double o1 = Geometry2D::orient(a, b, c);
-    const double o2 = Geometry2D::orient(a, b, d);
-    const double o3 = Geometry2D::orient(c, d, a);
-    const double o4 = Geometry2D::orient(c, d, b);
-
-    const int s1 = sign_eps(o1, eps);
-    const int s2 = sign_eps(o2, eps);
-    const int s3 = sign_eps(o3, eps);
-    const int s4 = sign_eps(o4, eps);
-
-    if (s1 * s2 < 0 && s3 * s4 < 0) return true;
-    if (s1 == 0 && point_on_segment(c, a, b, eps)) return true;
-    if (s2 == 0 && point_on_segment(d, a, b, eps)) return true;
-    if (s3 == 0 && point_on_segment(a, c, d, eps)) return true;
-    if (s4 == 0 && point_on_segment(b, c, d, eps)) return true;
-    return false;
-}
-
-[[nodiscard]] double segment_segment_distance_sq(
-    const glm::dvec2& a,
-    const glm::dvec2& b,
-    const glm::dvec2& c,
-    const glm::dvec2& d
-) {
-    if (segments_intersect_or_touch(a, b, c, d)) {
-        return 0.0;
-    }
-
-    return std::min({
-        point_segment_distance_sq(a, c, d),
-        point_segment_distance_sq(b, c, d),
-        point_segment_distance_sq(c, a, b),
-        point_segment_distance_sq(d, a, b),
-    });
-}
-
-[[nodiscard]] bool point_in_poly(const std::vector<Point2D>& poly, double x, double y) {
-    if (poly.size() < 3) return false;
-
-    bool inside = false;
-    std::size_t j = poly.size() - 1;
-    for (std::size_t i = 0; i < poly.size(); j = i++) {
-        const Point2D& a = poly[i];
-        const Point2D& b = poly[j];
-        const bool cond = (a.y() > y) != (b.y() > y);
-        if (!cond) continue;
-
-        const double denom = (b.y() - a.y()) + 1e-300;
-        const double x_on_edge = (b.x() - a.x()) * (y - a.y()) / denom + a.x();
-        if (x < x_on_edge) inside = !inside;
-    }
-    return inside;
-}
-
-[[nodiscard]] double loop_signed_area(const std::vector<Point2D>& loop) {
-    if (loop.size() < 3) return 0.0;
-
-    double area = 0.0;
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const Point2D& p = loop[i];
-        const Point2D& q = loop[(i + 1) % loop.size()];
-        area += p.x() * q.y() - q.x() * p.y();
-    }
-    return 0.5 * area;
-}
-
-void normalize_boundary_loop(std::vector<Point2D>& loop, bool make_clockwise) {
-    if (make_clockwise ? (loop_signed_area(loop) > 0.0) : (loop_signed_area(loop) < 0.0)) {
-        std::reverse(loop.begin(), loop.end());
-    }
-
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        loop[i].id = static_cast<int>(i);
-        loop[i].on_boundary = true;
-    }
-}
-
-[[nodiscard]] LoopBounds compute_loop_bounds(const std::vector<Point2D>& loop) {
-    LoopBounds bounds;
-    for (const Point2D& point : loop) {
-        bounds.xmin = std::min(bounds.xmin, point.x());
-        bounds.xmax = std::max(bounds.xmax, point.x());
-        bounds.ymin = std::min(bounds.ymin, point.y());
-        bounds.ymax = std::max(bounds.ymax, point.y());
-    }
-    return bounds;
-}
-
-[[nodiscard]] bool loop_self_intersects(const std::vector<Point2D>& loop) {
-    if (loop.size() < 4) return false;
-
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const glm::dvec2 a = loop[i].p;
-        const glm::dvec2 b = loop[(i + 1) % loop.size()].p;
-
-        for (std::size_t j = i + 1; j < loop.size(); ++j) {
-            const std::size_t i_next = (i + 1) % loop.size();
-            const std::size_t j_next = (j + 1) % loop.size();
-
-            if (i == j || i == j_next || i_next == j || i_next == j_next) {
-                continue;
-            }
-
-            const glm::dvec2 c = loop[j].p;
-            const glm::dvec2 d = loop[j_next].p;
-            if (segments_intersect_or_touch(a, b, c, d)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-[[nodiscard]] bool point_has_clearance_from_loop(
-    const glm::dvec2& point,
-    const std::vector<Point2D>& loop,
-    double clearance_sq
-) {
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const glm::dvec2 a = loop[i].p;
-        const glm::dvec2 b = loop[(i + 1) % loop.size()].p;
-        if (point_segment_distance_sq(point, a, b) <= clearance_sq) {
-            return false;
-        }
-    }
-    return true;
-}
-
-[[nodiscard]] bool loop_has_clearance_from_loop(
-    const std::vector<Point2D>& candidate,
-    const std::vector<Point2D>& obstacle,
-    double clearance_sq
-) {
-    for (std::size_t i = 0; i < candidate.size(); ++i) {
-        const glm::dvec2 a = candidate[i].p;
-        const glm::dvec2 b = candidate[(i + 1) % candidate.size()].p;
-        for (std::size_t j = 0; j < obstacle.size(); ++j) {
-            const glm::dvec2 c = obstacle[j].p;
-            const glm::dvec2 d = obstacle[(j + 1) % obstacle.size()].p;
-            if (segment_segment_distance_sq(a, b, c, d) <= clearance_sq) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
 
 [[nodiscard]] std::optional<std::string> generate_inner_boundary_template(
     const RandomInnerBoundaryConfig& cfg,
@@ -260,9 +54,9 @@ void normalize_boundary_loop(std::vector<Point2D>& loop, bool make_clockwise) {
         }
     }
 
-    normalize_boundary_loop(out_loop, true);
+    geom2d::loop::normalize_boundary(out_loop, true);
 
-    if (loop_self_intersects(out_loop)) {
+    if (geom2d::loop::self_intersects(out_loop)) {
         return "random inner boundary template self-intersects";
     }
 
@@ -276,37 +70,37 @@ void normalize_boundary_loop(std::vector<Point2D>& loop, bool make_clockwise) {
     double min_clearance
 ) {
     if (candidate.size() < 3 || outer.size() < 3) return false;
-    if (loop_self_intersects(candidate)) return false;
+    if (geom2d::loop::self_intersects(candidate)) return false;
 
     const double clearance_sq = min_clearance * min_clearance;
 
     for (const Point2D& point : candidate) {
-        if (!point_in_poly(outer, point.x(), point.y())) {
+        if (!geom2d::loop::point_inside(outer, point)) {
             return false;
         }
-        if (!point_has_clearance_from_loop(point.p, outer, clearance_sq)) {
+        if (!geom2d::query::point_has_clearance_from_loop(point.p, outer, clearance_sq)) {
             return false;
         }
 
         for (const auto& hole : occupied_holes) {
-            if (point_in_poly(hole, point.x(), point.y())) {
+            if (geom2d::loop::point_inside(hole, point)) {
                 return false;
             }
-            if (!point_has_clearance_from_loop(point.p, hole, clearance_sq)) {
+            if (!geom2d::query::point_has_clearance_from_loop(point.p, hole, clearance_sq)) {
                 return false;
             }
         }
     }
 
-    if (!loop_has_clearance_from_loop(candidate, outer, clearance_sq)) {
+    if (!geom2d::query::loop_has_clearance_from_loop(candidate, outer, clearance_sq)) {
         return false;
     }
 
     for (const auto& hole : occupied_holes) {
-        if (!loop_has_clearance_from_loop(candidate, hole, clearance_sq)) {
+        if (!geom2d::query::loop_has_clearance_from_loop(candidate, hole, clearance_sq)) {
             return false;
         }
-        if (!hole.empty() && point_in_poly(candidate, hole.front().x(), hole.front().y())) {
+        if (!hole.empty() && geom2d::loop::point_inside(candidate, hole.front())) {
             return false;
         }
     }
@@ -844,7 +638,7 @@ void PlanarMeshComponent::add_random_inner_boundaries() {
         return;
     }
 
-    const LoopBounds bounds = compute_loop_bounds(outer_boundary_->points());
+    const geom2d::loop::Bounds bounds = geom2d::loop::compute_bounds(outer_boundary_->points());
     if (!bounds.valid()) {
         LOGT_ERROR(LogGeometry, "Failed to compute outer boundary bounds for random inner boundaries");
         return;
@@ -877,16 +671,16 @@ void PlanarMeshComponent::add_random_inner_boundaries() {
             ++total_attempts;
 
             const glm::dvec2 center{xdist(rng), ydist(rng)};
-            if (!point_in_poly(outer_boundary_->points(), center.x, center.y)) {
+            if (!geom2d::loop::point_inside(outer_boundary_->points(), center)) {
                 continue;
             }
-            if (!point_has_clearance_from_loop(center, outer_boundary_->points(), clearance_sq)) {
+            if (!geom2d::query::point_has_clearance_from_loop(center, outer_boundary_->points(), clearance_sq)) {
                 continue;
             }
 
             bool center_is_blocked = false;
             for (const auto& hole : occupied_holes) {
-                if (point_in_poly(hole, center.x, center.y) || !point_has_clearance_from_loop(center, hole, clearance_sq)) {
+                if (geom2d::loop::point_inside(hole, center) || !geom2d::query::point_has_clearance_from_loop(center, hole, clearance_sq)) {
                     center_is_blocked = true;
                     break;
                 }

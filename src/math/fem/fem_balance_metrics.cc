@@ -64,8 +64,8 @@ BalanceMetrics compute_balance_metrics(
     if (to_count(u.size()) != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
         return out;
 
-    out.xmin = out.ymin =  Math::DINF;
-    out.xmax = out.ymax = -Math::DINF;
+    out.xmin = out.ymin =  math::DINF;
+    out.xmax = out.ymax = -math::DINF;
     for (const auto& n : mesh.nodes) {
         out.xmin = std::min(out.xmin, n.x); out.xmax = std::max(out.xmax, n.x);
         out.ymin = std::min(out.ymin, n.y); out.ymax = std::max(out.ymax, n.y);

@@ -85,7 +85,7 @@ public:
         if (boundary_points.size() < 2) return max_edge_length;
 
         glm::dvec2 point(x, y);
-        double min_dist2_to_boundary = Math::DMAX;
+        double min_dist2_to_boundary = math::DMAX;
 
         const double influence2 = influence_distance * influence_distance;
 
@@ -226,7 +226,7 @@ public:
     double edge_length_at(double x, double y) const override {
         if (functions.empty()) return 10.0; // Default
         
-        double min_h = Math::DMAX;
+        double min_h = math::DMAX;
         for (const auto& func : functions) {
             min_h = std::min(min_h, func->edge_length_at(x, y));
         }

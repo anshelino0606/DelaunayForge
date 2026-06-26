@@ -64,7 +64,7 @@ std::vector<double> ExteriorInteractionModel::diagonal(
 
         if (boundary_distance == std::numeric_limits<double>::max()) continue;
         const double delta = std::max(boundary_distance, min_distance);
-        const double exterior_tail = (Math::pi / s) * std::pow(delta, -2.0 * s);
+        const double exterior_tail = (math::PI / s) * std::pow(delta, -2.0 * s);
         diag[to_size(i)] = scale * nodal_mass[to_size(i)] * exterior_tail;
     }
     return diag;

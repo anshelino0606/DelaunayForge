@@ -141,8 +141,8 @@ FEM_BEGIN_PROPERTY_REGISTER(ParametricCurveConfig)
         ParametricCurveConfig, 
         t_start,
         DisplayName("t start"),
-        ClampMin(-4.0f * Math::F_PI),
-        ClampMax(4.0f * Math::F_PI),
+        ClampMin(-4.0f * math::F_PI),
+        ClampMax(4.0f * math::F_PI),
         Format("%.3f")
     );
 
@@ -150,8 +150,8 @@ FEM_BEGIN_PROPERTY_REGISTER(ParametricCurveConfig)
         ParametricCurveConfig, 
         t_end,
         DisplayName("t end"),
-        ClampMin(-4.0f * Math::F_PI),
-        ClampMax(8.0f * Math::F_PI),
+        ClampMin(-4.0f * math::F_PI),
+        ClampMax(8.0f * math::F_PI),
         Format("%.3f")
     );
 
@@ -174,25 +174,25 @@ FEM_END_PROPERTY_REGISTER(ParametricCurveConfig)
 void ParametricCurveConfig::on_preset_changed() {
     switch (preset) {
         case ParametricPreset::Circle:
-            radius = 100.0; t_start = 0.0; t_end = 2*Math::PI;
+            radius = 100.0; t_start = 0.0; t_end = 2*math::PI;
             break;
         case ParametricPreset::Ellipse:
-            width = 150.0; height = 80.0; t_start = 0.0; t_end = 2*Math::PI;
+            width = 150.0; height = 80.0; t_start = 0.0; t_end = 2*math::PI;
             break;
         case ParametricPreset::Cardioid:
-            size = 80.0; t_start = 0.0; t_end = 2*Math::PI;
+            size = 80.0; t_start = 0.0; t_end = 2*math::PI;
             break;
         case ParametricPreset::Lemniscate:
-            size = 100.0; t_start = -Math::PI; t_end = Math::PI;
+            size = 100.0; t_start = -math::PI; t_end = math::PI;
             break;
         case ParametricPreset::Epicycloid:
-            outer_radius = 100.0; inner_radius = 30.0; t_start = 0.0; t_end = 2*Math::PI;
+            outer_radius = 100.0; inner_radius = 30.0; t_start = 0.0; t_end = 2*math::PI;
             break;
         case ParametricPreset::Hypocycloid:
-            outer_radius = 120.0; inner_radius = 40.0; t_start = 0.0; t_end = 2*Math::PI;
+            outer_radius = 120.0; inner_radius = 40.0; t_start = 0.0; t_end = 2*math::PI;
             break;
         case ParametricPreset::Spiral:
-            start_radius = 20.0; inner_radius = 5.0; t_start = 0.0; t_end = 6*Math::PI;
+            start_radius = 20.0; inner_radius = 5.0; t_start = 0.0; t_end = 6*math::PI;
             break;
         case ParametricPreset::Custom:
             custom_x_expr = "a*cos(t)";
