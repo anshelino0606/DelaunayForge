@@ -138,9 +138,6 @@ static bool points_on_circle(const std::vector<Point2D>& pts, double eps = 1e-10
 }
 
 static void build_edges_for_result(DelaunayTriangulationResult& R) {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
     struct AccEdge {
         int a = -1, b = -1;
         int tri_left  = -1;
@@ -150,14 +147,14 @@ static void build_edges_for_result(DelaunayTriangulationResult& R) {
     const std::size_t tri_n = R.triangles.size();
     R.tri2edge.assign(tri_n, {-1, -1, -1});
 
-    std::unordered_map<EdgeKey, int, U64Hash> edge_index;
+    std::unordered_map<PackedEdge, int, PackedEdgeHash> edge_index;
     edge_index.reserve(tri_n * 3);
 
     std::vector<AccEdge> acc;
     acc.reserve(tri_n * 3);
 
     auto add_edge = [&](int a, int b, int t) -> int {
-        const EdgeKey k = detail::pack_edge(a, b);
+        const PackedEdge k = pack_edge(a, b);
         auto [it, inserted] = edge_index.emplace(k, static_cast<int>(acc.size()));
         if (inserted) {
             AccEdge e;
@@ -447,17 +444,14 @@ std::vector<int> DelaunayTriangulator::find_bad_triangles(const Point2D& point) 
 }
 
 std::vector<Edge> DelaunayTriangulator::extract_cavity_boundary(const std::vector<int>& bad_triangles) {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
-    std::unordered_map<EdgeKey, int, U64Hash> edge_count;
+    std::unordered_map<PackedEdge, int, PackedEdgeHash> edge_count;
     edge_count.reserve(bad_triangles.size() * 3);
 
     for (int tri_idx : bad_triangles) {
         const Tri& tri = triangles[tri_idx];
-        edge_count[detail::pack_edge(tri.v[0], tri.v[1])] += 1;
-        edge_count[detail::pack_edge(tri.v[1], tri.v[2])] += 1;
-        edge_count[detail::pack_edge(tri.v[2], tri.v[0])] += 1;
+        edge_count[pack_edge(tri.v[0], tri.v[1])] += 1;
+        edge_count[pack_edge(tri.v[1], tri.v[2])] += 1;
+        edge_count[pack_edge(tri.v[2], tri.v[0])] += 1;
     }
 
     std::vector<Edge> boundary;
@@ -570,7 +564,7 @@ void DelaunayTriangulator::build_adjacency() {
             return -1;
         }
         
-        detail::EdgeKey k = detail::pack_edge(a, b);
+        PackedEdge k = pack_edge(a, b);
 
         auto it = edge_index_cache_.find(k);
         if (it != edge_index_cache_.end()) return it->second;
@@ -635,9 +629,6 @@ void DelaunayTriangulator::build_adjacency() {
 
 
 void fem::DelaunayTriangulator::update_triangle_neighbors() {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
     struct Pair {
         int a = -1;
         int b = -1;
@@ -645,7 +636,7 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         [[nodiscard]] int other(int t) const noexcept { return (a == t) ? b : (b == t ? a : -1); }
     };
 
-    std::unordered_map<EdgeKey, Pair, U64Hash> edge2pair;
+    std::unordered_map<PackedEdge, Pair, PackedEdgeHash> edge2pair;
     edge2pair.reserve(triangles.size() * 3);
 
     for (std::size_t i = 0; i < triangles.size(); ++i) {
@@ -653,9 +644,9 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         const auto& tri = triangles[i];
         const int t = static_cast<int>(i);
 
-        edge2pair[detail::pack_edge(tri.v[0], tri.v[1])].add(t);
-        edge2pair[detail::pack_edge(tri.v[1], tri.v[2])].add(t);
-        edge2pair[detail::pack_edge(tri.v[2], tri.v[0])].add(t);
+        edge2pair[pack_edge(tri.v[0], tri.v[1])].add(t);
+        edge2pair[pack_edge(tri.v[1], tri.v[2])].add(t);
+        edge2pair[pack_edge(tri.v[2], tri.v[0])].add(t);
     }
 
     for (std::size_t i = 0; i < triangles.size(); ++i) {
@@ -663,9 +654,9 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         auto& tri = triangles[i];
         const int t = static_cast<int>(i);
 
-        tri.neighbors[0] = edge2pair[detail::pack_edge(tri.v[0], tri.v[1])].other(t);
-        tri.neighbors[1] = edge2pair[detail::pack_edge(tri.v[1], tri.v[2])].other(t);
-        tri.neighbors[2] = edge2pair[detail::pack_edge(tri.v[2], tri.v[0])].other(t);
+        tri.neighbors[0] = edge2pair[pack_edge(tri.v[0], tri.v[1])].other(t);
+        tri.neighbors[1] = edge2pair[pack_edge(tri.v[1], tri.v[2])].other(t);
+        tri.neighbors[2] = edge2pair[pack_edge(tri.v[2], tri.v[0])].other(t);
     }
 }
 
@@ -1655,7 +1646,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
 }
 
 bool DelaunayTriangulator::edge_exists(int a, int b) const {
-    const auto k = detail::pack_edge(a, b);
+    const auto k = pack_edge(a, b);
     return edge_index_cache_.find(k) != edge_index_cache_.end();
 }
 
@@ -1681,7 +1672,7 @@ Edge DelaunayTriangulator::find_first_intersecting_edge(int a, int b) const {
 
 
 bool DelaunayTriangulator::flip_edge_if_possible(int ea, int eb) {
-    const auto k = detail::pack_edge(ea, eb);
+    const auto k = pack_edge(ea, eb);
     auto it = edge_index_cache_.find(k);
     if (it == edge_index_cache_.end()) return false;
 
@@ -1934,7 +1925,7 @@ void DelaunayTriangulator::enforce_constraints() {
 
     // Track constraint pairs that have already failed-and-been-skipped so we
     // never infinitely restart on the same unsplittable edge.
-    std::unordered_set<detail::EdgeKey, detail::U64Hash> permanently_failed;
+    std::unordered_set<PackedEdge, PackedEdgeHash> permanently_failed;
 
     // Compute a scale-aware boundary epsilon from the current boundary points.
     {
@@ -1978,7 +1969,7 @@ void DelaunayTriangulator::enforce_constraints() {
         }
 
         // Skip constraints already known to be unrecoverable.
-        if (permanently_failed.count(detail::pack_edge(a, b))) { ++i; continue; }
+        if (permanently_failed.count(pack_edge(a, b))) { ++i; continue; }
 
         if (!recover_constraint(a, b)) {
             // Degenerate constraint: collapse it in the owning loop.
@@ -2039,7 +2030,7 @@ void DelaunayTriangulator::enforce_constraints() {
 
             // Mark this constraint as permanently failed so we don't trigger
             // infinite restarts if a later edge splits + restarts from 0.
-            permanently_failed.insert(detail::pack_edge(a, b));
+            permanently_failed.insert(pack_edge(a, b));
             LOGT_ERROR(LogGeometry, "Failed to recover constraint edge (%d,%d).", a, b);
 
             if (!dumped_failure_diagnostics && failure_count < 12) {

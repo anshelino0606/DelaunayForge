@@ -85,6 +85,18 @@ struct EdgeInfo : public Struct {
     }
 };
 
+using PackedEdge = std::uint64_t;
+
+[[nodiscard]] constexpr PackedEdge pack_edge(int a, int b) noexcept {
+    const std::uint32_t ua = static_cast<std::uint32_t>(a < b ? a : b);
+    const std::uint32_t ub = static_cast<std::uint32_t>(a < b ? b : a);
+    return (static_cast<PackedEdge>(ua) << 32) | static_cast<PackedEdge>(ub);
+}
+
+struct PackedEdgeHash {
+    [[nodiscard]] std::size_t operator()(PackedEdge k) const noexcept;
+};
+
 struct Point2D : public Struct {
     FEM_DECLARE_STRUCT(Point2D);
     FEM_DECLARE_PROPERTY_REGISTER(Point2D);
