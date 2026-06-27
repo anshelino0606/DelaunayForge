@@ -60,10 +60,10 @@ int32_t incircle_ccw(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2&
         fabsl((long double)c.x - (long double)d.x), fabsl((long double)c.y - (long double)d.y)
     });
 
-    const long double default_eps = 1e-18L * m*m*m*m;
+    const long double final_eps = (long double)eps * m*m*m*m;
 
-    if (det >  default_eps) return +1;
-    if (det < -default_eps) return -1;
+    if (det >  final_eps) return +1;
+    if (det < -final_eps) return -1;
     return 0;
 }
 
