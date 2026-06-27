@@ -1,4 +1,4 @@
-#include "fractional_integral_operator.h"
+#include "fractional_element_contribution.h"
 #include "math/fem/fem_mesh.h"
 #include "math/fem/operators/nodal_mass_builder.h"
 #include "math/fem/operators/nonlocal_kernel.h"
@@ -26,9 +26,9 @@ static void fill_fractional_element_rhs(
         }
     }
 
-    const auto& A = mesh.nodes[to_size(ids[0])];
-    const auto& B = mesh.nodes[to_size(ids[1])];
-    const auto& C = mesh.nodes[to_size(ids[2])];
+    const FEMMesh::Node& A = mesh.nodes[to_size(ids[0])];
+    const FEMMesh::Node& B = mesh.nodes[to_size(ids[1])];
+    const FEMMesh::Node& C = mesh.nodes[to_size(ids[2])];
     const double area = 0.5 * std::abs((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y));
     if (area <= 0.0) {
         return;
@@ -58,7 +58,7 @@ void FractionalElementContribution::compute(
     bf_ = glm::dvec3(0.0);
 
     const Index N = mesh.dof_count_index();
-    const auto exterior_diag = approximate_integral_exterior_diagonal(
+    const std::vector<double> exterior_diag = approximate_integral_exterior_diagonal(
         mesh, nodal_mass, static_cast<double>(spec.s), static_cast<double>(spec.scale));
 
     for (int a = 0; a < 3; ++a) {

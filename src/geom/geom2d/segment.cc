@@ -1,6 +1,6 @@
 #include "segment.h"
 #include "predicate.h"
-#include "geom/common_types_2d.h"
+#include "math/math_.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
@@ -19,10 +19,6 @@ double point_segment_dist2(const glm::dvec2& p, const glm::dvec2& a, const glm::
     t = std::clamp(t, 0.0, 1.0);
     const glm::dvec2 q = a + t * ab;
     return glm::distance2(p, q);
-}
-
-double point_segment_dist2(const glm::dvec2& p, const Point2D& a, const Point2D& b, double eps) {
-    return point_segment_dist2(p, a.p, b.p, eps);
 }
 
 bool point_on_segment(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, double eps) {

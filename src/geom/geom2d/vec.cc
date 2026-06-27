@@ -1,5 +1,5 @@
 #include "vec.h"
-#include "geom/common_types_2d.h"
+#include "math/math_.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
@@ -10,10 +10,6 @@ double cross(const glm::dvec2& a, const glm::dvec2& b) {
     return a.x*b.y - a.y*b.x;
 }
 
-double cross(const Point2D& a, const Point2D& b) {
-    return cross(a.p, b.p);
-}
-
 double angle(const glm::dvec2& u, const glm::dvec2& v) {
     const double nu = std::sqrt(u.x*u.x + u.y*u.y);
     const double nv = std::sqrt(v.x*v.x + v.y*v.y);
@@ -22,8 +18,8 @@ double angle(const glm::dvec2& u, const glm::dvec2& v) {
     return math::safe_acos(cs);
 }
 
-double hypot(const Point2D& a, const Point2D& b) {
-    return std::hypot(a.x() - b.x(), a.y() - b.y());
+double hypot(const glm::dvec2& a, const glm::dvec2& b) {
+    return std::hypot(a.x - b.x, a.y - b.y);
 }
 
 double dist2(const glm::dvec2& a, const glm::dvec2& b) {

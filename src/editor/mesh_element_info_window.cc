@@ -3,7 +3,7 @@
 #include "geom/planar_mesh/planar_mesh_component.h"
 #include "math/pde/pde_component.h"
 #include "math/p1_element_2d.h"
-#include "math/fractional_integral_operator.h"
+#include "math/fractional_element_contribution.h"
 #include "geom/delaunay/delaunay_types.h"
 #include "geom/geom2d/vec.h"
 
