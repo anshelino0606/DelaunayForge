@@ -69,11 +69,11 @@ FEMMesh build_fem_mesh_all_boundary_dirichlet(
     }
 
     M.elems.reserve(R.triangles.size());
-    for (const auto& t : R.triangles) {
+    for (const Tri& t : R.triangles) {
         if (!t.valid) continue;
-        const auto& A = R.points[t.v[0]];
-        const auto& B = R.points[t.v[1]];
-        const auto& C = R.points[t.v[2]];
+        const Point2D& A = R.points[t.v[0]];
+        const Point2D& B = R.points[t.v[1]];
+        const Point2D& C = R.points[t.v[2]];
         const double area = 0.5 * std::abs(
             (B.x() - A.x()) * (C.y() - A.y()) - (C.x() - A.x()) * (B.y() - A.y())
         );
@@ -82,9 +82,8 @@ FEMMesh build_fem_mesh_all_boundary_dirichlet(
     }
 
     M.edges_bc.reserve(R.edges.size());
-    for (const auto& e : R.edges) {
-        if (!e.on_boundary) continue;
-        if (static_cast<std::size_t>(e.a) >= R.points.size() || static_cast<std::size_t>(e.b) >= R.points.size()) continue;
+    for (const EdgeInfo& e : R.edges) {
+        if (!e.valid_vertices(R.points.size()) || !e.on_boundary) continue;
 
         const double mx = 0.5 * (R.points[e.a].x() + R.points[e.b].x());
         const double my = 0.5 * (R.points[e.a].y() + R.points[e.b].y());

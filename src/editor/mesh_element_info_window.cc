@@ -102,8 +102,8 @@ void MeshElementInfoWindow::draw(const DrawInfo& info) {
 
 
 void MeshElementInfoWindow::draw_vertex_(const DelaunayTriangulationResult& R, int vid) {
-    if (vid < 0 || (size_t)vid >= R.points.size()) return;
-    const auto& P = R.points[vid];
+    if (!R.valid_point(vid)) return;
+    const Point2D& P = R.points[vid];
 
     ImGui::Text("Vertex: %d", vid);
     ImGui::Text("Pos: (%.9f, %.9f)", (double)P.x(), (double)P.y());
@@ -121,10 +121,8 @@ void MeshElementInfoWindow::draw_vertex_(const DelaunayTriangulationResult& R, i
 }
 
 void MeshElementInfoWindow::draw_edge_(const DelaunayTriangulationResult& R, int eid) {
-    if (eid < 0 || (size_t)eid >= R.edges.size()) return;
-
-    const auto& E = R.edges[eid];
-    if ((size_t)E.a >= R.points.size() || (size_t)E.b >= R.points.size()) return;
+    if (!R.valid_edge(eid)) return;
+    const EdgeInfo& E = R.edges[eid];
 
     const Point2D& A = R.points[E.a];
     const Point2D& B = R.points[E.b];
@@ -153,12 +151,14 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
                                           int tid,
                                           const FEMProblem& prob)
 {
-    if (tid < 0 || (size_t)tid >= R.triangles.size()) return;
-    const auto& T = R.triangles[tid];
-    if (!T.valid) { ImGui::Text("Triangle: %d (invalid)", tid); return; }
+    if (!R.valid_triangle(tid))  {
+        ImGui::Text("Triangle: %d (invalid)", tid);
+        return;
+    }
+    const Tri& T = R.triangles[tid];
 
     const int v0 = T.v[0], v1 = T.v[1], v2 = T.v[2];
-    if ((size_t)v0 >= R.points.size() || (size_t)v1 >= R.points.size() || (size_t)v2 >= R.points.size()) return;
+    if (!T.valid_vertices(R.points.size())) return;
 
     ImGui::Text("Triangle: %d", tid);
     ImGui::Text("Verts: (%d, %d, %d)", v0, v1, v2);

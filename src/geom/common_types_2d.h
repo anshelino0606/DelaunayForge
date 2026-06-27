@@ -22,6 +22,18 @@ struct Tri : public Struct {
     Tri(int32_t a, int32_t b, int32_t c, int32_t triangle_id = sInvalidIndex)
         : v(a, b, c), id(triangle_id), valid(true) {}
 
+    bool valid_vertex(int local_idx, std::size_t point_count) const noexcept {
+        return v[local_idx] >= 0 && static_cast<std::size_t>(v[local_idx]) < point_count;
+    }
+
+    /// Returns true when all three vertex indices are valid for a points array of size `point_count`.
+    bool valid_vertices(std::size_t point_count) const noexcept {
+        return valid_vertex(0, point_count)
+            && valid_vertex(1, point_count)
+            && valid_vertex(2, point_count);
+    }
+
+
     bool contains_vertex(int vertex) const {
         return (v.x == vertex) || (v.y == vertex) || (v.z == vertex);
     }
@@ -39,6 +51,12 @@ struct Edge : public Struct {
     
     Edge() = default;
     Edge(int32_t x, int32_t y) : a(std::min(x,y)), b(std::max(x,y)) {}
+
+    /// Returns true when both endpoint indices are valid for a points array of size `point_count`.
+    bool valid_vertices(std::size_t point_count) const noexcept {
+        return a >= 0 && static_cast<std::size_t>(a) < point_count
+            && b >= 0 && static_cast<std::size_t>(b) < point_count;
+    }
 };
 
 inline bool operator==(const Edge& x, const Edge& y) { 
@@ -59,6 +77,12 @@ struct EdgeInfo : public Struct {
     int32_t boundary_tag = sInvalidIndex;
 
     BoundaryValue bc = BoundaryValue::none();
+
+    /// Returns true when both endpoint indices are valid for a points array of size `point_count`.
+    bool valid_vertices(std::size_t point_count) const noexcept {
+        return a >= 0 && static_cast<std::size_t>(a) < point_count
+            && b >= 0 && static_cast<std::size_t>(b) < point_count;
+    }
 };
 
 struct Point2D : public Struct {

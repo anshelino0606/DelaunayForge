@@ -664,8 +664,7 @@ std::unordered_map<int, std::vector<std::pair<int, int>>> BoundaryCondition::bui
     std::unordered_map<int, std::vector<std::pair<int, int>>> G;
     for (int eid = 0; eid < (int)R.edges.size(); ++eid) {
         const auto& e = R.edges[eid];
-        if (!e.on_boundary) continue;
-        if ((std::size_t)e.a >= R.points.size() || (std::size_t)e.b >= R.points.size()) continue;
+        if (!e.valid_vertices(R.points.size()) || !e.on_boundary) continue;
 
         G[e.a].push_back({e.b, eid});
         G[e.b].push_back({e.a, eid});

@@ -174,10 +174,10 @@ static bool try_build_rectangle_laplace_exact(const PlanarMeshComponent& mesh,
     RectangleLaplaceBenchmark rect;
     bool have_boundary_vertex = false;
     int boundary_edge_count = 0;
-    for (const auto& edge : R.edges) {
+    for (const EdgeInfo& edge : R.edges) {
         if (!edge.on_boundary) continue;
 
-        if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+        if (!edge.valid_vertices(R.points.size())) {
             if (reason) *reason = "Boundary edge references invalid vertices";
             return false;
         }
@@ -247,7 +247,7 @@ static bool try_build_rectangle_laplace_exact(const PlanarMeshComponent& mesh,
                 return false;
             }
             const auto& edge = R.edges[edge_id];
-            if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+            if (!edge.valid_vertices(R.points.size())) {
                 if (reason) *reason = "Boundary condition references invalid boundary vertices";
                 return false;
             }
@@ -399,28 +399,23 @@ bool FEMErrorAnalysisWindow::selection_point_(
     if (!sel.valid()) return false;
 
     if (sel.kind == CanvasInspector::Kind::Vertex) {
-        if (sel.id < 0 || (size_t)sel.id >= R.points.size()) return false;
+        if (!R.valid_point(sel.id)) return false;
         x = R.points[sel.id].x();
         y = R.points[sel.id].y();
         return true;
     }
 
     if (sel.kind == CanvasInspector::Kind::Edge) {
-        if (sel.id < 0 || (size_t)sel.id >= R.edges.size()) return false;
-        const auto& E = R.edges[sel.id];
-        if ((size_t)E.a >= R.points.size() || (size_t)E.b >= R.points.size()) return false;
+        if (!R.valid_edge(sel.id)) return false;
+        const EdgeInfo& E = R.edges[sel.id];
         x = 0.5 * (R.points[E.a].x() + R.points[E.b].x());
         y = 0.5 * (R.points[E.a].y() + R.points[E.b].y());
         return true;
     }
 
     if (sel.kind == CanvasInspector::Kind::Triangle) {
-        if (sel.id < 0 || (size_t)sel.id >= R.triangles.size()) return false;
-        const auto& T = R.triangles[sel.id];
-        if (!T.valid) return false;
-        if ((size_t)T.v[0] >= R.points.size() || 
-            (size_t)T.v[1] >= R.points.size() || 
-            (size_t)T.v[2] >= R.points.size()) return false;
+        if (!R.valid_triangle(sel.id)) return false;
+        const Tri& T = R.triangles[sel.id];
 
         glm::dvec2 c = geom2d::tri::centroid(R.points[T.v[0]], R.points[T.v[1]], R.points[T.v[2]]);
 

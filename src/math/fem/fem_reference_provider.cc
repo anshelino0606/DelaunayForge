@@ -547,10 +547,10 @@ DelaunayTriangulationResult refine_delaunay_uniform(
         refined.edges.push_back(edge_info);
         if (edge_info.on_boundary) {
             refined.boundary_edges.push_back({edge_info.a, edge_info.b});
-            if (static_cast<std::size_t>(edge_info.a) < refined.points.size()) {
+            if (refined.valid_point(edge_info.a)) {
                 refined.points[static_cast<std::size_t>(edge_info.a)].on_boundary = true;
             }
-            if (static_cast<std::size_t>(edge_info.b) < refined.points.size()) {
+            if (refined.valid_point(edge_info.b)) {
                 refined.points[static_cast<std::size_t>(edge_info.b)].on_boundary = true;
             }
         }

@@ -319,8 +319,7 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
         if (!t.valid) continue;
 
         for (int j = 0; j < 3; ++j) {
-            const int v = t.v[j];
-            if (v < 0 || static_cast<std::size_t>(v) >= points.size()) {
+            if (!t.valid_vertex(j, points.size())) {
                 t.valid = false;
                 break;
             }
@@ -533,7 +532,7 @@ void DelaunayTriangulator::build_adjacency() {
         
         bool valid = true;
         for (int j = 0; j < 3; ++j) {
-            if (t.v[j] < 0 || static_cast<size_t>(t.v[j]) >= points.size()) {
+            if (!t.valid_vertex(j, points.size())) {
                 LOGT_ERROR(LogGeometry,
                     "Triangle %zu references invalid vertex %d (point count: %zu)",
                     i,
@@ -1190,7 +1189,7 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
 
     // 3) mark boundary nodes + make boundary edge list for the result
     for (int id : poly_idx)
-        if (id >= 0 && id < (int)R.points.size()) R.points[id].on_boundary = true;
+        if (R.valid_point(id)) R.points[id].on_boundary = true;
 
     R.boundary_edges.clear();
     if (poly_idx.size() >= 2) {
@@ -1260,9 +1259,9 @@ void DelaunayTriangulator::refine_to_density() {
         glm::dvec2 mid(0.0);
         bool best_is_boundary_segment = false;
 
-        for (const auto& e : edges_cache_) {
+        for (const EdgeInfo& e : edges_cache_) {
             if (e.a < 0 || e.b < 0) continue;
-            if ((size_t)e.a >= points.size() || (size_t)e.b >= points.size()) continue;
+            if (!e.valid_vertices(points.size())) continue;
 
             // Critical: never split constrained edges by inserting a point on them.
             // Doing so makes the original constraint (a,b) impossible to recover.
@@ -1516,6 +1515,11 @@ DelaunayTriangulator::triangulate_with_boundaries(
     // Rebuild from constrained state
     {
         DelaunayTriangulationResult constrained;
+        constrained.min_angle = R.min_angle;
+        constrained.median_angle = R.median_angle;
+        constrained.avg_angle = R.avg_angle;
+        constrained.triangle_count = R.triangle_count;
+        constrained.point_count = R.points.size();
         constrained.points = points;
         constrained.triangles.reserve(triangles.size());
         for (const auto& t : triangles) if (t.valid) constrained.triangles.push_back(t);
@@ -1541,7 +1545,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
     // mark boundary points in result
     for (const auto& L : loop_idx) {
         for (int id : L) {
-            if (id >= 0 && id < (int)R.points.size()) {
+            if (R.valid_point(id)) {
                 R.points[id].on_boundary = true;
             }
         }
@@ -1659,10 +1663,10 @@ Edge DelaunayTriangulator::find_first_intersecting_edge(int a, int b) const {
     const glm::dvec2 A = points[a].p;
     const glm::dvec2 B = points[b].p;
 
-    for (const auto& e : edges_cache_) {
+    for (const EdgeInfo& e : edges_cache_) {
+        if (!e.valid_vertices(points.size())) continue;
         const int u = e.a, v = e.b;
         if (u < 0 || v < 0) continue;
-        if (u >= (int)points.size() || v >= (int)points.size()) continue;
         if (share_endpoint(a, b, u, v)) continue;
 
         const glm::dvec2 C = points[u].p;
@@ -1815,11 +1819,11 @@ bool DelaunayTriangulator::recover_constraint(int a, int b) {
         const glm::dvec2 B = points[b].p;
 
         bool flipped = false;
-        for (const auto& e : edges_cache_) {
+        for (const EdgeInfo& e : edges_cache_) {
+            if (!e.valid_vertices(points.size())) continue;
+            
             const int u = e.a;
             const int v = e.b;
-            if (u < 0 || v < 0) continue;
-            if (u >= (int)points.size() || v >= (int)points.size()) continue;
             if (share_endpoint(a, b, u, v)) continue;
 
             const glm::dvec2 C = points[u].p;
@@ -2048,9 +2052,8 @@ void DelaunayTriangulator::enforce_constraints() {
 
                     build_adjacency();
                     int intersecting_edges = 0;
-                    for (const auto& e : edges_cache_) {
-                        if (e.a < 0 || e.b < 0) continue;
-                        if (e.a >= (int)points.size() || e.b >= (int)points.size()) continue;
+                    for (const EdgeInfo& e : edges_cache_) {
+                        if (!e.valid_vertices(points.size())) continue;
                         if (share_endpoint(a, b, e.a, e.b)) continue;
                         const glm::dvec2 C = points[e.a].p;
                         const glm::dvec2 D = points[e.b].p;
@@ -2106,9 +2109,9 @@ DelaunayTriangulationResult DelaunayTriangulator::build_result_from_state() cons
         R.vert2tri.assign(R.points.size(), {});
         for (size_t i = 0; i < R.triangles.size(); ++i) {
             const auto& t = R.triangles[i];
-            if ((size_t)t.v[0] < R.points.size()) R.vert2tri[t.v[0]].push_back((int)i);
-            if ((size_t)t.v[1] < R.points.size()) R.vert2tri[t.v[1]].push_back((int)i);
-            if ((size_t)t.v[2] < R.points.size()) R.vert2tri[t.v[2]].push_back((int)i);
+            if (t.valid_vertex(0, R.points.size())) R.vert2tri[t.v[0]].push_back((int)i);
+            if (t.valid_vertex(1, R.points.size())) R.vert2tri[t.v[1]].push_back((int)i);
+            if (t.valid_vertex(2, R.points.size())) R.vert2tri[t.v[2]].push_back((int)i);
         }
 
         build_edges_for_result(R);

@@ -17,9 +17,9 @@ build_boundary_graph(const DelaunayTriangulationResult& R) {
     std::unordered_map<int, std::vector<std::pair<int,int>>> G;
     G.reserve(R.points.size());
     for (int eid = 0; eid < static_cast<int>(R.edges.size()); ++eid) {
-        const auto& e = R.edges[eid];
+        const EdgeInfo& e = R.edges[eid];
         if (!e.on_boundary) continue;
-        if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
+        if (!e.valid_vertices(R.points.size())) continue;
         G[e.a].push_back({e.b, eid});
         G[e.b].push_back({e.a, eid});
     }
@@ -28,11 +28,11 @@ build_boundary_graph(const DelaunayTriangulationResult& R) {
 
 static bool is_boundary_vertex(const DelaunayTriangulationResult& R, int v)
 {
-    if (v < 0 || (size_t)v >= R.points.size()) return false;
+    if (!R.valid_point(v)) return false;
     // Fast path: honor explicit flag if it exists
     if (R.points[v].on_boundary) return true;
     // Robust path: derive from incident edges
-    for (const auto& e : R.edges) {
+    for (const EdgeInfo& e : R.edges) {
         if (!e.on_boundary) continue;
         if (e.a == v || e.b == v) return true;
     }

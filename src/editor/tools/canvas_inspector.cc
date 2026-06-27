@@ -144,9 +144,9 @@ void CanvasInspector::draw(const DelaunayTriangulationResult& R) {
 }
 
 void CanvasInspector::draw_vertex_(const DelaunayTriangulationResult& R, int vid) const {
-    if (vid < 0 || (size_t)vid >= R.points.size()) return;
+    if (!R.valid_point(vid)) return;
 
-    const auto& P = R.points[vid];
+    const Point2D& P = R.points[vid];
 
     ImGui::Text("Vertex: %d", vid);
     ImGui::Text("Pos: (%.6f, %.6f)", (double)P.x(), (double)P.y());
