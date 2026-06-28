@@ -16,7 +16,7 @@ FEMSystemT<Real> assemble_generic(const FEMProblem& P) {
     if (!P.mesh) return sys;
 
     const FEMMesh& M = *P.mesh;
-    const Index N = M.dof_count_index();
+    const Index N = M.dof_count<Index>();
 
     IntegratorPolicy integ(P);
 
@@ -25,7 +25,7 @@ FEMSystemT<Real> assemble_generic(const FEMProblem& P) {
     T.reserve(to_size(N) * 7u + to_size(N));
 
     const BoundaryModel boundary = P.boundary.empty() ? make_boundary_model(M) : P.boundary;
-    const DirichletMask D = build_dirichlet_mask(boundary, M.dof_count_count());
+    const DirichletMask D = build_dirichlet_mask(boundary, M.dof_count<Count>());
 
     Real Ke[3][3];
     Real be[3];

@@ -6,17 +6,17 @@
 namespace fem {
 
 struct DenseMat {
-    int n = 0;
+    size_t n = 0;
     std::vector<double> a;
 
     DenseMat() = default;
-    explicit DenseMat(int n_);
+    explicit DenseMat(size_t n_);
 
-    double& operator()(int i, int j);
-    double operator()(int i, int j) const;
+    double& operator()(size_t i, size_t j);
+    double operator()(size_t i, size_t j) const;
 
     void release();
-    static DenseMat identity(int n);
+    static DenseMat identity(size_t n);
 };
 
 std::vector<double> matvec(const DenseMat& A, const std::vector<double>& x);
@@ -35,7 +35,7 @@ struct SymEig {
     DenseMat evec;
 };
 
-SymEig jacobi_symmetric_eig(DenseMat A, int max_sweeps = 200, double tol = 1e-12);
+SymEig jacobi_symmetric_eig(DenseMat A, size_t max_sweeps = 200, double tol = 1e-12);
 
 struct GenSymEig {
     std::vector<double> lambda;

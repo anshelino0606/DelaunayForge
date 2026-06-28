@@ -445,7 +445,7 @@ static inline ErrorMetricsT<Real> compute_error_metrics(
                 Real eAe = Real(0);
                 for (int i = 0; i < M.dof_count(); ++i) {
                     Real s = Real(0);
-                    for (int k = A.row_ptr[i]; k < A.row_ptr[i+1]; ++k) {
+                    for (Index k = A.row_ptr[i]; k < A.row_ptr[i+1]; ++k) {
                         const int j = A.col_idx[k];
                         s += (Real)A.vals[k] * e[(size_t)j];
                     }

@@ -3,7 +3,7 @@
 namespace fem {
 
 std::vector<double> build_fractional_nodal_mass(const FEMMesh& mesh) {
-    std::vector<double> nodal_mass(to_size(mesh.dof_count_index()), 0.0);
+    std::vector<double> nodal_mass(to_size(mesh.dof_count<Index>()), 0.0);
     for (const FEMMesh::Elem& elem : mesh.elems) {
         const double share = elem.area / 3.0;
         for (Index local = 0; local < Index{3}; ++local) {

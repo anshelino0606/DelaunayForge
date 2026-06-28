@@ -80,7 +80,7 @@ DirichletMask build_dirichlet_mask(const BoundaryModel& boundary, Count dof_coun
 }
 
 DirichletMask build_dirichlet_mask(const FEMMesh& mesh) {
-    return build_dirichlet_mask(make_boundary_model(mesh), mesh.dof_count_count());
+    return build_dirichlet_mask(make_boundary_model(mesh), mesh.dof_count<Count>());
 }
 
 } // namespace fem

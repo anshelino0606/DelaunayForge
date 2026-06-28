@@ -68,8 +68,8 @@ inline EnergyMetrics compute_energy_terms(
 ) {
     EnergyMetrics em{};
 
-    const int N = mesh.dof_count();
-    if ((int)u.size() != N || mesh.nodes.empty()) return em;
+    const size_t N = mesh.dof_count();
+    if (u.size() != N || mesh.nodes.empty()) return em;
 
     em.u_min = *std::min_element(u.begin(), u.end());
     em.u_max = *std::max_element(u.begin(), u.end());
@@ -156,21 +156,21 @@ inline double compute_dirichlet_boundary_work(
     std::span<const double> u,
     const Coefficient<Real>& kappa
 ) {
-    const Count N = mesh.dof_count();
-    if (to_count(u.size()) != N || mesh.nodes.empty()) return 0.0;
+    const size_t N = mesh.dof_count();
+    if (u.size() != N || mesh.nodes.empty()) return 0.0;
 
     // Build edge → adjacent-triangle map (same as balance_metrics)
     auto pack_edge = [](Index a, Index b) -> std::uint64_t {
-        const auto lo = std::min(a, b);
-        const auto hi = std::max(a, b);
+        const Index lo = std::min(a, b);
+        const Index hi = std::max(a, b);
         return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
     };
 
     struct TriVerts { Index v0, v1, v2; bool boundary = true; };
     std::unordered_map<std::uint64_t, TriVerts> adj;
     adj.reserve(mesh.elems.size() * 3);
-    for (const auto& E : mesh.elems) {
-        for (int e = 0; e < 3; ++e) {
+    for (const FEMMesh::Elem& E : mesh.elems) {
+        for (size_t e = 0; e < 3; ++e) {
             auto key = pack_edge(E.v[e], E.v[(e+1)%3]);
             auto it = adj.find(key);
             if (it == adj.end())
@@ -331,12 +331,12 @@ inline double compute_nonlocal_dirichlet_work(
     double C_scale = 1.0,
     bool include_exterior_tail = false
 ) {
-    const int N = mesh.dof_count();
-    if ((int)u.size() != N) return 0.0;
+    const size_t N = mesh.dof_count();
+    if (u.size() != N) return 0.0;
 
     // Identify Dirichlet nodes
     std::vector<bool> is_dir(N, false);
-    for (const auto& e : mesh.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : mesh.edges_bc) {
         if (e.type == BCType::Dirichlet) {
             if (e.a >= 0 && e.a < N) is_dir[e.a] = true;
             if (e.b >= 0 && e.b < N) is_dir[e.b] = true;
@@ -378,16 +378,16 @@ inline double compute_fractional_bilinear_energy(
     double C_scale = 1.0,
     bool include_exterior_tail = false
 ) {
-    const int N = mesh.dof_count();
-    if ((int)u.size() != N) return 0.0;
+    const size_t N = mesh.dof_count();
+    if (u.size() != N) return 0.0;
 
     std::vector<double> m = build_fractional_nodal_mass(mesh);
     double energy = 0.0;
 
-    for (int i = 0; i < N; ++i) {
-        const auto& Pi = mesh.nodes[i];
+    for (size_t i = 0; i < N; ++i) {
+        const FEMMesh::Node& Pi = mesh.nodes[i];
         const double ui = u[i];
-        for (int j = i + 1; j < N; ++j) {
+        for (size_t j = i + 1; j < N; ++j) {
             const double wij = fractional_pair_weight(Pi, mesh.nodes[j], m[i], m[j], s, C_scale);
             if (wij == 0.0) [[unlikely]] continue;
             const double du = ui - u[j];
@@ -397,9 +397,9 @@ inline double compute_fractional_bilinear_energy(
 
     if (include_exterior_tail) {
         const auto exterior_diag = approximate_integral_exterior_diagonal(mesh, m, s, C_scale);
-        for (int i = 0; i < N; ++i) {
-            const double ui = u[static_cast<size_t>(i)];
-            energy += exterior_diag[static_cast<size_t>(i)] * ui * ui;
+        for (size_t i = 0; i < N; ++i) {
+            const double ui = u[i];
+            energy += exterior_diag[i] * ui * ui;
         }
     }
     return 0.5 * energy;

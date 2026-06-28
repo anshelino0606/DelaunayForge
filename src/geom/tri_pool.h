@@ -17,7 +17,7 @@ struct TriPool final {
     const_iterator begin() const noexcept { return tris_.begin(); }
     const_iterator end()   const noexcept { return tris_.end(); }
 
-    [[nodiscard]] std::size_t size() const noexcept { return tris_.size(); }
+    [[nodiscard]] id_type size() const noexcept { return static_cast<id_type>(tris_.size()); }
     [[nodiscard]] bool empty() const noexcept { return tris_.empty(); }
 
     TriPool& operator=(const std::vector<Tri>& vec) {

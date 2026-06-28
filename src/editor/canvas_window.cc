@@ -966,7 +966,7 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
 
     if (draw_colorbar) {
         const int cb_w = (int)std::lround(colorbar_layout.width);
-        const int cb_h = (int)std::lround(std::min<float>(plot_h, colorbar_layout.height));
+        const int cb_h = (int)std::lround(std::min((float)plot_h, colorbar_layout.height));
         const int cb_x = plot_x0 + plot_w + (int)std::lround(colorbar_layout.x_gap);
         const int cb_y = plot_y0 + (int)std::lround(colorbar_layout.y_offset);
 
@@ -1537,7 +1537,7 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
 
     if (draw_colorbar) {
         const int cb_w = (int)std::lround(colorbar_layout.width);
-        const int cb_h = (int)std::lround(std::min<float>(plot_h, colorbar_layout.height));
+        const int cb_h = (int)std::lround(std::min((float)plot_h, colorbar_layout.height));
         const int cb_x = plot_x0 + plot_w + (int)std::lround(colorbar_layout.x_gap);
         const int cb_y = plot_y0 + (int)std::lround(colorbar_layout.y_offset);
 

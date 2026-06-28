@@ -302,7 +302,7 @@ void evaluate_test_object() {
                 continue;
             }
 
-            for (size_t i = 0; i != 10; ++i) {
+            for (int32_t i = 0; i != 10; ++i) {
                 PlaceholderObject* placeholder = new PlaceholderObject();
                 placeholder->set_value(i);
                 arr_struct_property->add_value(obj_arrs, placeholder);
@@ -336,7 +336,7 @@ void evaluate_test_object() {
             }
 
             for (size_t i = 0; i != 10; ++i) {
-                arr_struct_property->add_value(obj_arrs, glm::vec2(i));
+                arr_struct_property->add_value(obj_arrs, glm::vec2((float)i));
             }
 
             break;

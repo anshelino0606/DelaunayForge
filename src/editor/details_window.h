@@ -11,7 +11,7 @@ class Entity;
 class BoundaryCondition;
 class PlanarMeshComponent;
 class PDEComponent;
-class FEMMesh;
+struct FEMMesh;
 struct CanvasWindowState;
 
 struct DetailsWindowDrawInfo {

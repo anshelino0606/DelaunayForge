@@ -471,14 +471,14 @@ void PlanarMeshComponent::update_buffers() {
         const Point2D& point = triangulation_result_.points[i];
 
         glm::vec3& vertex = vertices.emplace_back();
-        vertex.x = point.x();
+        vertex.x = static_cast<float>(point.x());
         vertex.y = 0;
-        vertex.z = point.y();
+        vertex.z = static_cast<float>(point.y());
 
         if (can_use_solution_as_height) {
             const double solution_value = solution.solution_u[i];
             const double scaled_value = solution_value * height_scale;
-            vertex.y = std::clamp(scaled_value, display_min_height, display_max_height);
+            vertex.y = static_cast<float>(std::clamp(scaled_value, display_min_height, display_max_height));
         }
     }
 
@@ -498,7 +498,7 @@ void PlanarMeshComponent::update_buffers() {
 }
 
 uint32_t PlanarMeshComponent::index_count() const {
-    return triangulation_result_.triangles.size() * 3;
+    return static_cast<uint32_t>(triangulation_result_.triangles.size() * 3);
 }
 
 void PlanarMeshComponent::normalize_boundary_pts_(std::vector<Point2D>& pts, bool mark_boundary) {

@@ -19,7 +19,7 @@ FractionalMatrixFreeP1Operator::FractionalMatrixFreeP1Operator(const FEMMesh& me
 }
 
 Count FractionalMatrixFreeP1Operator::size() const noexcept {
-    return mesh_ ? mesh_->dof_count_count() : Count{0};
+    return mesh_ ? mesh_->dof_count<Count>() : Count{0};
 }
 
 void FractionalMatrixFreeP1Operator::apply(std::span<const Real> x, std::span<Real> y) const {
@@ -52,7 +52,7 @@ Real FractionalMatrixFreeP1Operator::diagonal(Index i) const noexcept {
 
     Real diag = 0.0;
     const FEMMesh::Node& lhs = mesh_->nodes[to_size(i)];
-    const Index N = mesh_->dof_count_index();
+    const Index N = mesh_->dof_count<Index>();
     for (Index j = 0; j < N; ++j) {
         if (i == j) continue;
         const FEMMesh::Node& rhs = mesh_->nodes[to_size(j)];

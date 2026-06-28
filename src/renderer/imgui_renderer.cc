@@ -147,8 +147,8 @@ void ImGuiRenderer::draw(const ImGuiRendererDrawInfo& draw_info) {
     g_device->WriteBuffer(*vs_constant_buffer_, 0, &vs_ui_data, sizeof(glm::vec4));
 
     LLGL::Viewport main_viewport;
-    main_viewport.width = fb_width;
-    main_viewport.height = fb_height;
+    main_viewport.width = static_cast<float>(fb_width);
+    main_viewport.height = static_cast<float>(fb_height);
 
     LLGL::CommandBuffer* cmd = draw_info.cmd;
 
@@ -182,10 +182,10 @@ void ImGuiRenderer::draw(const ImGuiRendererDrawInfo& draw_info) {
                 continue;
 
             LLGL::Scissor scissor;
-            scissor.x = clipMin.x;
-            scissor.y = clipMin.y;
-            scissor.width = clipMax.x - clipMin.x;
-            scissor.height = clipMax.y - clipMin.y;
+            scissor.x = static_cast<int32_t>(clipMin.x);
+            scissor.y = static_cast<int32_t>(clipMin.y);
+            scissor.width = static_cast<int32_t>(clipMax.x - clipMin.x);
+            scissor.height = static_cast<int32_t>(clipMax.y - clipMin.y);
 
             const uint64_t tex_id = static_cast<uint64_t>(im_cmd->GetTexID());
             const uint32_t tex_idx = static_cast<uint32_t>(tex_id);

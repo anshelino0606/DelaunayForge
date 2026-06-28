@@ -61,7 +61,7 @@ void PlanarDelaunayMeshGenerator::triangulate(PlanarMeshComponent* mesh_componen
     points_storage = mesh_component->outer_boundary()->points();
 
     for (size_t i = 0; i != points_storage.size(); ++i) {
-        points_storage[i].id = i;
+        points_storage[i].id = static_cast<int32_t>(i);
     }
 
     std::vector<std::vector<Point2D>> loops_storage;
@@ -78,7 +78,7 @@ void PlanarDelaunayMeshGenerator::triangulate(PlanarMeshComponent* mesh_componen
         points_storage.reserve(points_storage.size() + loop_points.size());
 
         for (Point2D point : loop_points) {
-            point.id = points_storage.size();
+            point.id = static_cast<int32_t>(points_storage.size());
             point.on_boundary = true;
             points_storage.push_back(point);
             loop.push_back(point);

@@ -15,7 +15,7 @@ std::vector<double> ExteriorInteractionModel::diagonal(
     double s,
     double scale
 ) const {
-    const Index N = mesh.dof_count_index();
+    const Index N = mesh.dof_count<Index>();
     std::vector<double> diag(to_size(N), 0.0);
     if (!enabled || N == 0 || mesh.edges_bc.empty()) return diag;
 

@@ -78,15 +78,7 @@ EditorDrawResult Editor::draw(const EditorDrawInfo& draw_info) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    {
-        static uint64_t s_editor_frame_counter = 0;
-        const bool log_this_frame = ((s_editor_frame_counter++ % 120u) == 0u);
-        if (log_this_frame) {
-            const ImGuiIO& io = ImGui::GetIO();
-        }
-    }
     docking_window_.draw({});
-    // delaunay_gui_->render();
     draw_debug_info_callback_();
 
     main_menu_toolbar_.draw({
@@ -155,25 +147,12 @@ EditorDrawResult Editor::draw(const EditorDrawInfo& draw_info) {
         .sel  = pick_.sel,
     });
 
-
-
     planar_mesh_generator_window_.draw({
         .selected_mesh = selected_mesh,
         .canvas_state = &canvas_.state()
     });
 
     ImGui::Render();
-
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImVec2 win_pos_pt = vp->Pos;
-
-    glm::vec2 framebuffer_size = window_->frame_buffer_size();
-    uint32_t width = framebuffer_size.x;
-    uint32_t height = framebuffer_size.y;
-
-    ImVec2 display_framebuffer_scale = ImGui::GetIO().DisplayFramebufferScale;
-    uint32_t dfb_width = display_framebuffer_scale.x;
-    uint32_t dfb_height = display_framebuffer_scale.y;
 
     EditorDrawResult draw_result;
     draw_result.selected_entity = entity;

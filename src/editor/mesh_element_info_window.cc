@@ -31,24 +31,24 @@ void MeshElementInfoWindow::ensure_cache_(const PlanarMeshComponent& mesh) {
     cached_fem_ = mesh.build_fem_mesh();
     rebuild_bc_maps_();
 
-    const int N = cached_fem_.dof_count();
-    nodal_mass_.assign((std::size_t)N, 0.0);
-    for (const auto& E : cached_fem_.elems) {
+    const size_t N = cached_fem_.dof_count();
+    nodal_mass_.assign(N, 0.0);
+    for (const FEMMesh::Elem& E : cached_fem_.elems) {
         const double share = E.area / 3.0;
-        nodal_mass_[(std::size_t)E.v[0]] += share;
-        nodal_mass_[(std::size_t)E.v[1]] += share;
-        nodal_mass_[(std::size_t)E.v[2]] += share;
+        nodal_mass_[to_size(E.v[0])] += share;
+        nodal_mass_[to_size(E.v[1])] += share;
+        nodal_mass_[to_size(E.v[2])] += share;
     }
 }
 
 void MeshElementInfoWindow::rebuild_bc_maps_() {
     edge_bc_.clear();
 
-    const int N = cached_fem_.dof_count();
-    is_dir_.assign((std::size_t)N, 0);
-    dir_val_.assign((std::size_t)N, 0.0);
+    const size_t N = cached_fem_.dof_count();
+    is_dir_.assign(N, 0);
+    dir_val_.assign(N, 0.0);
 
-    for (const auto& e : cached_fem_.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : cached_fem_.edges_bc) {
         if (e.a < 0 || e.b < 0) continue;
         edge_bc_.emplace(edge_key_(e.a, e.b), e);
 

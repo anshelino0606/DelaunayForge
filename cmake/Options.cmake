@@ -9,6 +9,7 @@ endif()
 if(MSVC)
   add_compile_options(
     /MP # Multi-processor compilation
+    /W3
     $<$<CONFIG:Release>:/O2>
     $<$<CONFIG:Release>:/fp:fast>
     $<$<CONFIG:Release>:/DNDEBUG>
@@ -29,6 +30,7 @@ function(fem_configure_target target)
   target_compile_definitions(${target} PRIVATE
     NOMINMAX
     _ENABLE_EXTENDED_ALIGNED_STORAGE
+    _CRT_SECURE_NO_WARNINGS
     SOURCE_DIR="${CMAKE_SOURCE_DIR}"
   )
 

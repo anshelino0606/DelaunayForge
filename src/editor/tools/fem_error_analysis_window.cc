@@ -876,7 +876,7 @@ void FEMErrorAnalysisWindow::draw_section_aitken_analysis_(const DrawInfo& info)
     
     if (ImGui::Button("Capture Current Solution")) {
         const double h = mesh_h_max_edge<double>(cached_fem_);
-        const int dofs = cached_fem_.dof_count();
+        const int dofs = static_cast<int>(cached_fem_.dof_count());
         
         // Check for duplicate mesh size
         bool is_duplicate = false;

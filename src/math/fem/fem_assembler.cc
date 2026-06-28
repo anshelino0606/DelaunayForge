@@ -184,7 +184,7 @@ FEMSystem assemble_and_solve_operator_P1(
 
     sys = assemble_operator_P1(local, op);
     const BoundaryModel boundary = local.boundary.empty() ? make_boundary_model(*local.mesh) : local.boundary;
-    apply_dirichlet_elimination(sys, *local.mesh, build_dirichlet_mask(boundary, local.mesh->dof_count_count()));
+    apply_dirichlet_elimination(sys, *local.mesh, build_dirichlet_mask(boundary, local.mesh->dof_count<Count>()));
     solve_linear_system(sys);
     fill_solution(sys, out);
     return sys;

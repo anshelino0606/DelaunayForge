@@ -79,7 +79,7 @@ FEMSystem assemble_fractional_p1_operator_system(
     if (!problem.mesh) return system;
 
     const FEMMesh& mesh = *problem.mesh;
-    const Index N = mesh.dof_count_index();
+    const Index N = mesh.dof_count<Index>();
     const NonlocalKernel kernel{.s = options.s, .scale = options.scale};
 
     const std::vector<double> nodal_mass = build_fractional_nodal_mass(mesh);

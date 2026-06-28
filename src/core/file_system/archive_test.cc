@@ -61,15 +61,15 @@ void ArchiveTest::run()
 
     for (uint32_t i = 0; i != 10; ++i) {
         struct_obj_arrs_write->struct_arr_.push_back(PlaceholderStruct{
-            .struct_value1 = glm::vec2((i + 1) * 2),
-            .struct_value2 = glm::vec3((i + 2) * 2)
+            .struct_value1 = glm::vec2(static_cast<float>((i + 1) * 2)),
+            .struct_value2 = glm::vec3(static_cast<float>((i + 2) * 2))
         });
 
         PlaceholderObject* temp_obj = new PlaceholderObject();
         temp_obj->set_value(i * 10);
         struct_obj_arrs_write->obj_arr_.push_back(temp_obj);
 
-        struct_obj_arrs_write->vec2_arr_.push_back(glm::vec2(i));
+        struct_obj_arrs_write->vec2_arr_.push_back(glm::vec2(static_cast<float>(i)));
     }
 
     Archive obj_arr_write_archive;
