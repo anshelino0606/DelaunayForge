@@ -51,8 +51,6 @@ struct EditCondition : public PropertyAttribute {
         std::string property_path;
         Operator op = Operator::Equal;
         
-        std::variant<int, float, bool, std::string> compare_value;
-        
         std::unique_ptr<Condition> left;
         std::unique_ptr<Condition> right;
     };

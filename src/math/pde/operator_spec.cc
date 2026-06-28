@@ -83,11 +83,11 @@ OperatorSpec make_operator_spec(const std::optional<FractionalEquationConfig>& c
 }
 
 std::optional<FractionalEquationConfig> make_fractional_config(const OperatorSpec& spec) {
-    return std::visit(FractionalConfigVisitor{}, spec);
+    return spec.apply(FractionalConfigVisitor{});
 }
 
 bool is_local_operator(const OperatorSpec& spec) noexcept {
-    return std::holds_alternative<LocalEllipticSpec>(spec);
+    return spec.is<LocalEllipticSpec>();
 }
 
 bool is_fractional_operator(const OperatorSpec& spec) noexcept {
@@ -95,7 +95,7 @@ bool is_fractional_operator(const OperatorSpec& spec) noexcept {
 }
 
 std::optional<FractionalType> fractional_type_of(const OperatorSpec& spec) {
-    return std::visit(FractionalTypeVisitor{}, spec);
+    return spec.apply(FractionalTypeVisitor{});
 }
 
 } // namespace fem

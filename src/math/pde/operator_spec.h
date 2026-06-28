@@ -3,6 +3,7 @@
 
 #include "math/fractional_equation_config.h"
 #include "math/types.h"
+#include "core/variant.h"
 
 #include <optional>
 #include <variant>
@@ -38,7 +39,7 @@ struct FractionalSpectralSpecT {
 };
 
 template<typename Real = double>
-using OperatorSpecT = std::variant<
+using OperatorSpecT = Variant<
     LocalEllipticSpecT<Real>,
     FractionalIntegralSpecT<Real>,
     FractionalRegionalSpecT<Real>,
