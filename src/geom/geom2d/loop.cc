@@ -63,26 +63,43 @@ bool self_intersects(const std::vector<Point2D>& loop) {
     return false;
 }
 
+bool ray_intersects_edge(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& point) {
+    const bool crosses_y = (a.y > point.y) != (b.y > point.y);
+    if (!crosses_y) return false;
+
+    const double denom = (b.y - a.y) + 1e-300;
+    const double x_on_edge = (b.x - a.x) * (point.y - a.y) / denom + a.x;
+    return point.x < x_on_edge;
+}
+
 bool point_inside(const std::vector<Point2D>& loop, const glm::dvec2& point) {
     if (loop.size() < 3) return false;
 
     bool inside = false;
     std::size_t j = loop.size() - 1;
     for (std::size_t i = 0; i < loop.size(); j = i++) {
-        const Point2D& a = loop[i];
-        const Point2D& b = loop[j];
-        const bool cond = (a.y() > point.y) != (b.y() > point.y);
-        if (!cond) continue;
-
-        const double denom = (b.y() - a.y()) + 1e-300;
-        const double x_on_edge = (b.x() - a.x()) * (point.y - a.y()) / denom + a.x();
-        if (point.x < x_on_edge) inside = !inside;
+        if (ray_intersects_edge(loop[i], loop[j], point)) {
+            inside = !inside;
+        }
     }
     return inside;
 }
 
-bool point_inside(const std::vector<Point2D>& loop, const Point2D& point) {
-    return point_inside(loop, point.p);
+bool point_inside(const std::vector<Point2D>& all_points, const std::vector<int>& loop_indices, const glm::dvec2& point) {
+    if (loop_indices.size() < 3) return true;
+
+    bool inside = false;
+    std::size_t j = loop_indices.size() - 1;
+
+    for (std::size_t i = 0; i < loop_indices.size(); j = i++) {
+        const Point2D& a = all_points[static_cast<std::size_t>(loop_indices[i])];
+        const Point2D& b = all_points[static_cast<std::size_t>(loop_indices[j])];
+
+        if (ray_intersects_edge(a, b, point)) {
+            inside = !inside;
+        }
+    }
+    return inside;
 }
 
 }

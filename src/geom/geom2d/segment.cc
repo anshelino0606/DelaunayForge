@@ -15,6 +15,7 @@ double point_segment_dist2(const glm::dvec2& p, const glm::dvec2& a, const glm::
     const double ab2 = glm::dot(ab, ab);
     if (ab2 <= eps) return glm::distance2(p, a);
 
+    // Is it correct, not glm::dot(ap, ab)?
     double t = glm::dot(ap, ap) / ab2;
     t = std::clamp(t, 0.0, 1.0);
     const glm::dvec2 q = a + t * ab;
@@ -29,6 +30,20 @@ bool point_on_segment(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2
     const double ymin = std::min(a.y, b.y) - eps;
     const double ymax = std::max(a.y, b.y) + eps;
     return p.x >= xmin && p.x <= xmax && p.y >= ymin && p.y <= ymax;
+}
+
+bool intersect(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, const glm::dvec2& d, double eps) {
+    const double o1 = pred::orient(a, b, c);
+    const double o2 = pred::orient(a, b, d);
+    const double o3 = pred::orient(c, d, a);
+    const double o4 = pred::orient(c, d, b);
+
+    const int s1 = math::sign_eps(o1, eps);
+    const int s2 = math::sign_eps(o2, eps);
+    const int s3 = math::sign_eps(o3, eps);
+    const int s4 = math::sign_eps(o4, eps);
+
+    return s1 * s2 < 0 && s3 * s4 < 0;
 }
 
 bool intersect_or_touch(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, const glm::dvec2& d, double eps) {

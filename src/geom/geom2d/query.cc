@@ -1,6 +1,7 @@
 #include "query.h"
 #include "segment.h"
 #include "loop.h"
+#include "vec.h"
 
 namespace fem::geom2d::query {
 
@@ -26,6 +27,28 @@ bool loop_has_clearance_from_loop(const std::vector<Point2D>& candidate, const s
                 return false;
             }
         }
+    }
+    return true;
+}
+
+bool points_on_circle(const std::vector<Point2D>& pts, double eps) {
+    if (pts.size() < 4) return false;
+
+    glm::dvec2 A = pts[0].p, B = pts[1].p, C = pts[2].p;
+    double d = 2.0 * (A.x*(B.y - C.y) + B.x*(C.y - A.y) + C.x*(A.y - B.y));
+    if (std::abs(d) < eps) return false;
+    double ux = ((A.x*A.x + A.y*A.y)*(B.y - C.y) +
+                 (B.x*B.x + B.y*B.y)*(C.y - A.y) +
+                 (C.x*C.x + C.y*C.y)*(A.y - B.y)) / d;
+    double uy = ((A.x*A.x + A.y*A.y)*(C.x - B.x) +
+                 (B.x*B.x + B.y*B.y)*(A.x - C.x) +
+                 (C.x*C.x + C.y*C.y)*(B.x - A.x)) / d;
+    glm::dvec2 O(ux, uy);
+    double R = geom2d::vec::hypot(A, {ux, uy});
+
+    for (const Point2D& p : pts) {
+        double r = geom2d::vec::hypot(p, {ux, uy});
+        if (std::abs(r - R) > 1e-6 * R) return false;
     }
     return true;
 }

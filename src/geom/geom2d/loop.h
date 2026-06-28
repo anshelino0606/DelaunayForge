@@ -25,7 +25,7 @@ void normalize_boundary(std::vector<Point2D>& loop, bool make_clockwise);
 Bounds compute_bounds(const std::vector<Point2D>& loop);
 bool self_intersects(const std::vector<Point2D>& loop);
 bool point_inside(const std::vector<Point2D>& loop, const glm::dvec2& point);
-bool point_inside(const std::vector<Point2D>& loop, const Point2D& point);
+bool point_inside(const std::vector<Point2D>& all_points, const std::vector<int>& loop_indices, const glm::dvec2& point);
 
 }
 
