@@ -1,36 +1,13 @@
 #include "exterior_interaction_model.h"
 
 #include "math/math_.h"
+#include "geom/geom2d/segment.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
 namespace fem {
-
-double point_segment_distance(
-    double px,
-    double py,
-    double ax,
-    double ay,
-    double bx,
-    double by
-) {
-    const double abx = bx - ax;
-    const double aby = by - ay;
-    const double apx = px - ax;
-    const double apy = py - ay;
-    const double denom = abx * abx + aby * aby;
-
-    if (denom <= 0.0) {
-        return std::hypot(px - ax, py - ay);
-    }
-
-    const double t = std::clamp((apx * abx + apy * aby) / denom, 0.0, 1.0);
-    const double qx = ax + t * abx;
-    const double qy = ay + t * aby;
-    return std::hypot(px - qx, py - qy);
-}
 
 std::vector<double> ExteriorInteractionModel::diagonal(
     const FEMMesh& mesh,
@@ -58,7 +35,7 @@ std::vector<double> ExteriorInteractionModel::diagonal(
             const FEMMesh::Node& b = mesh.nodes[to_size(edge.b)];
             boundary_distance = std::min(
                 boundary_distance,
-                point_segment_distance(node.x, node.y, a.x, a.y, b.x, b.y)
+                geom2d::segment::point_segment_dist(node, a, b)
             );
         }
 

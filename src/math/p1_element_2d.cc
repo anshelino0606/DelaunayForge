@@ -26,7 +26,7 @@ P1Element2D::P1Element2D(const Point2D& p0, const Point2D& p1, const Point2D& p2
 void P1Element2D::apply_edge_bc(const FEMMesh::EdgeBC* bc, uint32_t local_a, uint32_t local_b) {
     if (!bc || !is_area_valid()) return;
 
-    const double L = geom2d::vec::hypot(*points_[local_a], *points_[local_b]);
+    const double L = geom2d::vec::dist(*points_[local_a], *points_[local_b]);
 
     if (bc->type == fem::BCType::Robin) {
         add_robin_edge(local_a, local_b, L, bc->k, bc->g);

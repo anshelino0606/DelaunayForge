@@ -127,7 +127,7 @@ void MeshElementInfoWindow::draw_edge_(const DelaunayTriangulationResult& R, int
     const Point2D& A = R.points[E.a];
     const Point2D& B = R.points[E.b];
 
-    const double L = geom2d::vec::hypot(A, B);
+    const double L = geom2d::vec::dist(A, B);
 
     ImGui::Text("Edge: %d", eid);
     ImGui::Text("Endpoints: (%d, %d)", E.a, E.b);

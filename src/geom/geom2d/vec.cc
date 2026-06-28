@@ -18,7 +18,7 @@ double angle(const glm::dvec2& u, const glm::dvec2& v) {
     return math::safe_acos(cs);
 }
 
-double hypot(const glm::dvec2& a, const glm::dvec2& b) {
+double dist(const glm::dvec2& a, const glm::dvec2& b) {
     return std::hypot(a.x - b.x, a.y - b.y);
 }
 

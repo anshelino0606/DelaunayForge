@@ -1,7 +1,9 @@
 #include "delaunay2d.h"
 #include "log_categories.h"
 #include "geom/geom2d/tri.h"
+#include "geom/geom2d/vec.h"
 #include "geom/geom2d/loop.h"
+#include "geom/geom2d/types.h"
 #include "geom/geom2d/segment.h"
 #include "geom/geom2d/query.h"
 #include "geom/geom2d/predicate.h"
@@ -243,24 +245,16 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
 
 void DelaunayTriangulator::add_super_triangle() {
     // Find bounding box
-    double xmin = math::DMAX;
-    double xmax = math::DMIN;
-    double ymin = math::DMAX;
-    double ymax = math::DMIN;
+    geom2d::BoundingBox bbox;
     
-    for (const auto& p : points) {
-        xmin = std::min(xmin, p.x());
-        xmax = std::max(xmax, p.x());
-        ymin = std::min(ymin, p.y());
-        ymax = std::max(ymax, p.y());
+    for (const Point2D& p : points) {
+        bbox.update(p);
     }
     
-    double dx = xmax - xmin;
-    double dy = ymax - ymin;
-    double dmax = std::max(dx, dy) * 10.0;
+    double dmax = bbox.dmax() * 10.0;
     
-    double cx = (xmin + xmax) * 0.5;
-    double cy = (ymin + ymax) * 0.5;
+    double cx = bbox.cx();
+    double cy = bbox.cy();
     
     points.emplace_back(cx, cy + 2*dmax, static_cast<int>(points.size()));
     points.emplace_back(cx - 1.732*dmax, cy - dmax, static_cast<int>(points.size()));  
@@ -617,7 +611,7 @@ void DelaunayTriangulator::rebuild_active_loop_bboxes_(std::span<const Point2D> 
 
         for (int vid : L) {
             if (vid < 0 || static_cast<std::size_t>(vid) >= pts.size()) continue;
-            const auto& p = pts[static_cast<std::size_t>(vid)];
+            const Point2D& p = pts[static_cast<std::size_t>(vid)];
             const double x = p.x();
             const double y = p.y();
             bb.xmin = std::min(bb.xmin, x);
@@ -748,9 +742,9 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
 
             // Don’t refine triangles that will be clipped out (outside outer / inside holes).
             if (!active_boundary_loops_.empty() || !active_boundary_loop_.empty()) {
-                const auto& A = points[t.v[0]];
-                const auto& B = points[t.v[1]];
-                const auto& C = points[t.v[2]];
+                const Point2D& A = points[t.v[0]];
+                const Point2D& B = points[t.v[1]];
+                const Point2D& C = points[t.v[2]];
                 glm::dvec2 c = geom2d::tri::centroid(A, B, C);
                 if (!is_inside_active_domain(c.x, c.y)) continue;
             }
@@ -985,14 +979,11 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
 {
     // 1) merge boundary points into the working set (dedupe by coords)
     std::vector<Point2D> pts = input_points;
-    double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
-    for (const auto& p : boundary_poly_ccw) {
-        xmin = std::min(xmin, p.x());
-        xmax = std::max(xmax, p.x());
-        ymin = std::min(ymin, p.y());
-        ymax = std::max(ymax, p.y());
+    geom2d::BoundingBox bbox;
+    for (const Point2D& p : boundary_poly_ccw) {
+        bbox.update(p);
     }
-    const double diag = std::hypot(xmax - xmin, ymax - ymin);
+    const double diag = bbox.dist();
     const double dedupe_tol = std::max(1e-6, diag * 4e-9);
     auto find_or_add = [&](const Point2D& q) {
         for (size_t i = 0; i < pts.size(); ++i) {
@@ -1138,7 +1129,7 @@ void DelaunayTriangulator::refine_to_density() {
             const auto& A = points[e.a];
             const auto& B = points[e.b];
 
-            double L = std::hypot(B.x() - A.x(), B.y() - A.y());
+            double L = geom2d::vec::dist(A, B);
             double mx = 0.5 * (A.x() + B.x()), my = 0.5 * (A.y() + B.y());
 
             // For porous domains, ignore edges that lie outside the domain or inside holes.
@@ -1211,16 +1202,13 @@ DelaunayTriangulator::triangulate_with_boundaries(
 
     std::vector<Point2D> pts = input_points;
 
-    double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
+    geom2d::BoundingBox bbox;
     for (const auto& loop : loops_ccw_outer_cw_holes) {
         for (const auto& p : loop) {
-            xmin = std::min(xmin, p.x());
-            xmax = std::max(xmax, p.x());
-            ymin = std::min(ymin, p.y());
-            ymax = std::max(ymax, p.y());
+            bbox.update(p);
         }
     }
-    const double diag = std::hypot(xmax - xmin, ymax - ymin);
+    const double diag = bbox.dist();
     const double weld_eps = std::max(1e-6, diag * 1e-8);
     const double snap_step = weld_eps;
     boundary_weld_eps_ = weld_eps;
@@ -1255,8 +1243,8 @@ DelaunayTriangulator::triangulate_with_boundaries(
             double a = 0.0;
             if (poly.size() < 2) return 0.0;
             for (size_t i = 0; i < poly.size(); ++i) {
-                const auto& p = poly[i];
-                const auto& q = poly[(i + 1) % poly.size()];
+                const Point2D& p = poly[i];
+                const Point2D& q = poly[(i + 1) % poly.size()];
                 a += p.x() * q.y() - p.y() * q.x();
             }
             return 0.5 * a;
@@ -1278,13 +1266,12 @@ DelaunayTriangulator::triangulate_with_boundaries(
     }
 
     {
-        double shortest_hole_edge = 1e300;
+        double shortest_hole_edge = math::DMAX;
         for (std::size_t li = 1; li < loop_idx.size(); ++li) {
-            const auto& L = loop_idx[li];
+            const std::vector<int>& L = loop_idx[li];
             for (std::size_t ei = 0; ei < L.size(); ++ei) {
                 const int ai = L[ei], bi = L[(ei + 1) % L.size()];
-                const double len = std::hypot(pts[bi].x() - pts[ai].x(),
-                                              pts[bi].y() - pts[ai].y());
+                const double len = geom2d::vec::dist(pts[bi], pts[ai]);
                 if (len > 1e-12) shortest_hole_edge = std::min(shortest_hole_edge, len);
             }
         }
@@ -1315,8 +1302,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
                     const int a = L[i];
                     const int b = L[j];
                     if (!detail::valid_index(a, pts.size()) || !detail::valid_index(b, pts.size())) continue;
-                    const double len = std::hypot(pts[(std::size_t)b].x() - pts[(std::size_t)a].x(),
-                                                  pts[(std::size_t)b].y() - pts[(std::size_t)a].y());
+                    const double len = geom2d::vec::dist(pts[(std::size_t)b], pts[(std::size_t)a]);
                     if (len < min_len) {
                         L.erase(L.begin() + (std::ptrdiff_t)j);
                         changed = true;
@@ -1436,8 +1422,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
         struct HoleSeg { glm::dvec2 a, b; };
         struct HoleInfo {
             std::vector<HoleSeg> segs;
-            double xmin =  1e300, xmax = -1e300;
-            double ymin =  1e300, ymax = -1e300;
+            geom2d::BoundingBox bbox;
         };
         std::vector<HoleInfo> holes_info;
         holes_info.reserve(loop_idx.size());
@@ -1447,13 +1432,11 @@ DelaunayTriangulator::triangulate_with_boundaries(
             HoleInfo hi;
             for (std::size_t ei = 0; ei < L.size(); ++ei) {
                 const int ai = L[ei], bi = L[(ei + 1) % L.size()];
-                const auto& pa = R.points[ai];
-                const auto& pb = R.points[bi];
+                const Point2D& pa = R.points[ai];
+                const Point2D& pb = R.points[bi];
                 hi.segs.push_back({pa.p, pb.p});
-                hi.xmin = std::min({hi.xmin, pa.x(), pb.x()});
-                hi.xmax = std::max({hi.xmax, pa.x(), pb.x()});
-                hi.ymin = std::min({hi.ymin, pa.y(), pb.y()});
-                hi.ymax = std::max({hi.ymax, pa.y(), pb.y()});
+                hi.bbox.update(pa);
+                hi.bbox.update(pb);
             }
             holes_info.push_back(std::move(hi));
         }
@@ -1470,8 +1453,8 @@ DelaunayTriangulator::triangulate_with_boundaries(
             const double eymin = std::min(P.y, Q.y);
             const double eymax = std::max(P.y, Q.y);
             for (const HoleInfo& hi : holes_info) {
-                if (exmax < hi.xmin || exmin > hi.xmax) continue;
-                if (eymax < hi.ymin || eymin > hi.ymax) continue;
+                if (exmax < hi.bbox.mins.x || exmin > hi.bbox.maxs.x) continue;
+                if (eymax < hi.bbox.mins.y || eymin > hi.bbox.maxs.y) continue;
                 for (const HoleSeg& s : hi.segs) {
                     if (geom2d::segment::intersect(P, Q, s.a, s.b, clip_eps))
                         return true;
@@ -1494,8 +1477,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
             for (std::size_t hi = 0; hi < holes_info.size(); ++hi) {
                 const HoleInfo& hole = holes_info[hi];
                 if (!hole.segs.empty()) {
-                    if (c.x < hole.xmin || c.x > hole.xmax) continue;
-                    if (c.y < hole.ymin || c.y > hole.ymax) continue;
+                    if (!hole.bbox.contains(c)) continue;
                 }
                 const std::size_t loop_h = hi + 1;
                 if (loop_h < loop_idx.size() && loop_idx[loop_h].size() >= 3) {
@@ -1788,8 +1770,7 @@ void DelaunayTriangulator::build_constraints_from_loops(const std::vector<std::v
             const int b = L[(i + 1) % L.size()];
             if (a == b) continue;
             if (!detail::valid_index(a, points.size()) || !detail::valid_index(b, points.size())) continue;
-            const double len = std::hypot(points[(std::size_t)b].x() - points[(std::size_t)a].x(),
-                                          points[(std::size_t)b].y() - points[(std::size_t)a].y());
+            const double len = geom2d::vec::dist(points[(std::size_t)b], points[(std::size_t)a]);
             if (len < min_len) continue;
             add_constraint(a, b);
         }
@@ -1809,18 +1790,15 @@ void DelaunayTriangulator::enforce_constraints() {
 
     // Compute a scale-aware boundary epsilon from the current boundary points.
     {
-        double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
+        geom2d::BoundingBox bbox;
         bool any = false;
-        for (const auto& p : points) {
+        for (const Point2D& p : points) {
             if (!p.on_boundary) continue;
             any = true;
-            xmin = std::min(xmin, p.x());
-            xmax = std::max(xmax, p.x());
-            ymin = std::min(ymin, p.y());
-            ymax = std::max(ymax, p.y());
+            bbox.update(p);
         }
         if (any) {
-            const double diag = std::hypot(xmax - xmin, ymax - ymin);
+            const double diag = bbox.dist();
             boundary_weld_eps_ = std::max(1e-6, diag * 1e-8);
             boundary_intersect_eps_ = std::max(config.epsilon, boundary_weld_eps_ * 0.5);
         }
@@ -1856,7 +1834,7 @@ void DelaunayTriangulator::enforce_constraints() {
             if (detail::valid_index(a, points.size()) && detail::valid_index(b, points.size())) {
                 const glm::dvec2 A = points[a].p;
                 const glm::dvec2 B = points[b].p;
-                const double seg_len = std::hypot(B.x - A.x, B.y - A.y);
+                const double seg_len = geom2d::vec::dist(A, B);
                 if (seg_len < degenerate_len) {
                     bool collapsed = false;
                     for (auto& L : active_boundary_loops_) {
@@ -1919,7 +1897,7 @@ void DelaunayTriangulator::enforce_constraints() {
                 if (a >= 0 && b >= 0 && a < (int)points.size() && b < (int)points.size()) {
                     const glm::dvec2 A = points[a].p;
                     const glm::dvec2 B = points[b].p;
-                    const double seg_len = std::hypot(B.x - A.x, B.y - A.y);
+                    const double seg_len = geom2d::vec::dist(A, B);
 
                     build_adjacency();
                     int intersecting_edges = 0;
@@ -2057,7 +2035,7 @@ int DelaunayTriangulator::find_blocking_vertex_on_segment(int a, int b) const {
     const double eps = std::max(1e-6, config.epsilon * 1e7);
 
     int best = -1;
-    double best_t = 1e300;
+    double best_t = math::DMAX;
 
     for (int i = 0; i < (int)points.size(); ++i) {
         if (i == a || i == b) continue;

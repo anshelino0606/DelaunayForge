@@ -8,15 +8,6 @@
 
 namespace fem {
 
-[[nodiscard]] double point_segment_distance(
-    double px,
-    double py,
-    double ax,
-    double ay,
-    double bx,
-    double by
-);
-
 struct ExteriorInteractionModel {
     bool enabled = true;
 

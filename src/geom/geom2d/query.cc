@@ -44,10 +44,10 @@ bool points_on_circle(const std::vector<Point2D>& pts, double eps) {
                  (B.x*B.x + B.y*B.y)*(A.x - C.x) +
                  (C.x*C.x + C.y*C.y)*(B.x - A.x)) / d;
     glm::dvec2 O(ux, uy);
-    double R = geom2d::vec::hypot(A, {ux, uy});
+    double R = geom2d::vec::dist(A, {ux, uy});
 
     for (const Point2D& p : pts) {
-        double r = geom2d::vec::hypot(p, {ux, uy});
+        double r = geom2d::vec::dist(p, {ux, uy});
         if (std::abs(r - R) > 1e-6 * R) return false;
     }
     return true;

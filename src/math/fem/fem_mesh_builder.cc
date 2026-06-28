@@ -14,11 +14,11 @@ FEMMesh build_fem_mesh(const DelaunayTriangulationResult& R) {
     }
 
     M.elems.reserve(R.triangles.size());
-    for (const auto& t : R.triangles) {
+    for (const Tri& t : R.triangles) {
         if (!t.valid) continue;
-        const auto& A = R.points[t.v[0]];
-        const auto& B = R.points[t.v[1]];
-        const auto& C = R.points[t.v[2]];
+        const Point2D& A = R.points[t.v[0]];
+        const Point2D& B = R.points[t.v[1]];
+        const Point2D& C = R.points[t.v[2]];
         const double area = 0.5 * std::abs(
             (B.x() - A.x()) * (C.y() - A.y()) - (C.x() - A.x()) * (B.y() - A.y())
         );

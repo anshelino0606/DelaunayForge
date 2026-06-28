@@ -15,7 +15,10 @@
 #include "math/fem/operators/exterior_interaction_model.h"
 #include "math/differential_equation.h"
 #include "geom/geom2d/tri.h"
+#include "geom/geom2d/vec.h"
+#include "geom/geom2d/types.h"
 #include "math/math_.h"
+#include "log_categories.h"
 
 namespace fem {
 
@@ -75,10 +78,10 @@ inline EnergyMetrics compute_energy_terms(
     //   reaction_energy = (1/2) ∫ c·u² dΩ
     //   integral_f = ∫ f dΩ
     //   integral_cu = ∫ c·u dΩ
-    for (const auto& E : mesh.elems) {
-        const auto& P0 = mesh.nodes[(size_t)E.v[0]];
-        const auto& P1 = mesh.nodes[(size_t)E.v[1]];
-        const auto& P2 = mesh.nodes[(size_t)E.v[2]];
+    for (const FEMMesh::Elem& E : mesh.elems) {
+        const FEMMesh::Node& P0 = mesh.nodes[(size_t)E.v[0]];
+        const FEMMesh::Node& P1 = mesh.nodes[(size_t)E.v[1]];
+        const FEMMesh::Node& P2 = mesh.nodes[(size_t)E.v[2]];
         const double u0 = u[(size_t)E.v[0]];
         const double u1 = u[(size_t)E.v[1]];
         const double u2 = u[(size_t)E.v[2]];
@@ -106,13 +109,13 @@ inline EnergyMetrics compute_energy_terms(
     }
     em.reaction_energy *= 0.5;
 
-    for (const auto& e : mesh.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : mesh.edges_bc) {
         if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
         
 
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const double L = std::hypot(B.x - A.x, B.y - A.y);
+        const FEMMesh::Node& A = mesh.nodes[to_size(e.a)];
+        const FEMMesh::Node& B = mesh.nodes[to_size(e.b)];
+        const double L = geom2d::vec::dist(A, B);
         if (!(L > 0.0)) continue;
 
         const double ua = u[to_size(e.a)];
@@ -178,45 +181,22 @@ inline double compute_dirichlet_boundary_work(
     }
 
     // Bounding box for outward-normal classification
-    double xmin =  math::DINF;
-    double xmax = -math::DINF;
-    double ymin =  math::DINF;
-    double ymax = -math::DINF;
-    for (const auto& nd : mesh.nodes) {
-        xmin = std::min(xmin, nd.x); xmax = std::max(xmax, nd.x);
-        ymin = std::min(ymin, nd.y); ymax = std::max(ymax, nd.y);
-    }
-    const double bbmax = std::max({1.0, xmax - xmin, ymax - ymin});
-    const double tol   = 1e-9 * bbmax;
+    geom2d::BoundingBox bbox;
 
-    auto classify_side = [&](double ax, double ay, double bx, double by) -> int {
-        // 0 = unknown, 1=left, 2=right, 3=bottom, 4=top
-        if (std::abs(ax-xmin)<=tol && std::abs(bx-xmin)<=tol) return 1;
-        if (std::abs(ax-xmax)<=tol && std::abs(bx-xmax)<=tol) return 2;
-        if (std::abs(ay-ymin)<=tol && std::abs(by-ymin)<=tol) return 3;
-        if (std::abs(ay-ymax)<=tol && std::abs(by-ymax)<=tol) return 4;
-        return 0;
-    };
-    auto outward_normal = [](int side, double& nx, double& ny) {
-        nx = ny = 0.0;
-        switch (side) {
-            case 1: nx = -1; break;  // left
-            case 2: nx =  1; break;  // right
-            case 3: ny = -1; break;  // bottom
-            case 4: ny =  1; break;  // top
-        }
-    };
+    for (const FEMMesh::Node& nd : mesh.nodes) {
+        bbox.update(nd);
+    }
 
     double work = 0.0;
+    const double eps = 1e-9;
 
-    for (const auto& e : mesh.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : mesh.edges_bc) {
         if (e.type != BCType::Dirichlet) continue;
         if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
-        
 
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const double L = std::hypot(B.x - A.x, B.y - A.y);
+        const FEMMesh::Node& A = mesh.nodes[to_size(e.a)];
+        const FEMMesh::Node& B = mesh.nodes[to_size(e.b)];
+        const double L = geom2d::vec::dist(A, B);
         if (!(L > 0.0)) continue;
 
         // Find adjacent triangle
@@ -229,9 +209,9 @@ inline double compute_dirichlet_boundary_work(
             !is_valid(v1, mesh.nodes.size()) ||
             !is_valid(v2, mesh.nodes.size())) continue;
 
-        const auto& P0 = mesh.nodes[to_size(v0)];
-        const auto& P1 = mesh.nodes[to_size(v1)];
-        const auto& P2 = mesh.nodes[to_size(v2)];
+        const FEMMesh::Node& P0 = mesh.nodes[to_size(v0)];
+        const FEMMesh::Node& P1 = mesh.nodes[to_size(v1)];
+        const FEMMesh::Node& P2 = mesh.nodes[to_size(v2)];
 
         double grad_phi[3][2];
         compute_p1_gradients<double>(P0.x, P0.y, P1.x, P1.y, P2.x, P2.y, grad_phi);
@@ -244,10 +224,9 @@ inline double compute_dirichlet_boundary_work(
                          + u[to_size(v2)]*grad_phi[2][1];
 
         // Outward normal
-        double nx = 0.0, ny = 0.0;
-        int side = classify_side(A.x, A.y, B.x, B.y);
-        if (side == 0) continue;  // inner Dirichlet edge — skip
-        outward_normal(side, nx, ny);
+        geom2d::Side side = bbox.classify_side(A, B, eps);
+        if (side == geom2d::Side::Unknown) continue;  // inner Dirichlet edge — skip
+        glm::dvec2 normal = bbox.outward_normal(side);
 
         const double mx = 0.5 * (A.x + B.x), my = 0.5 * (A.y + B.y);
         const double kappa_val = static_cast<double>(kappa(mx, my));
@@ -261,7 +240,7 @@ inline double compute_dirichlet_boundary_work(
         // For outward-pointing n: q_out = -κ ∇u·n_out (heat flux outward is negative of conduction)
         // Power injected = -q_out * u_D * L = κ (∇u·n) * u_D * L
         const double u_D_avg = 0.5 * (u[to_size(e.a)] + u[to_size(e.b)]);  // ≈ e.uD on Dirichlet edge
-        work += kappa_val * (gux * nx + guy * ny) * u_D_avg * L;
+        work += kappa_val * (gux * normal.x + guy * normal.y) * u_D_avg * L;
     }
 
     return work;

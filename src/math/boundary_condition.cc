@@ -5,6 +5,8 @@
 #include "log_categories.h"
 #include "math/fem/bc_value.h"
 #include "math/math_.h"
+#include "geom/geom2d/vec.h"
+#include "geom/geom2d/types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -352,24 +354,20 @@ static bool compute_loop_diagnostics(const std::vector<Point2D>& loop,
     out_diag = 0.0;
     if (loop.size() < 2) return false;
 
-    double minx = loop.front().x();
-    double miny = loop.front().y();
-    double maxx = minx;
-    double maxy = miny;
+    geom2d::BoundingBox bbox;
+    bbox.mins = loop.front().p;
+    bbox.maxs = loop.front().p;
 
     for (std::size_t i = 0; i < loop.size(); ++i) {
-        minx = std::min(minx, loop[i].x());
-        miny = std::min(miny, loop[i].y());
-        maxx = std::max(maxx, loop[i].x());
-        maxy = std::max(maxy, loop[i].y());
+        bbox.update(loop[i]);
 
         const glm::dvec2 A(loop[i].x(), loop[i].y());
         const glm::dvec2 B(loop[(i + 1) % loop.size()].x(),
                            loop[(i + 1) % loop.size()].y());
-        out_total_len += std::hypot(B.x - A.x, B.y - A.y);
+        out_total_len += geom2d::vec::dist(A, B);
     }
 
-    out_diag = std::hypot(maxx - minx, maxy - miny);
+    out_diag = bbox.dist();
     return out_total_len > 0.0;
 }
 

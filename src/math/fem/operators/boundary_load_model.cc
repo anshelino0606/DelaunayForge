@@ -1,4 +1,5 @@
 #include "boundary_load_model.h"
+#include "geom/geom2d/vec.h"
 
 #include <cmath>
 
@@ -16,7 +17,7 @@ void BoundaryLoadModel::add_natural_terms(
 
         const FEMMesh::Node& A = mesh.nodes[to_size(face.a)];
         const FEMMesh::Node& B = mesh.nodes[to_size(face.b)];
-        const Real L = static_cast<Real>(std::hypot(B.x - A.x, B.y - A.y));
+        const Real L = static_cast<Real>(geom2d::vec::dist(B, A));
         if (L <= Real(0)) continue;
 
         if (face.kind == BCType::Neumann) {

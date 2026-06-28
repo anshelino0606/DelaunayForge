@@ -9,6 +9,10 @@
 
 namespace fem::geom2d::segment {
 
+double point_segment_dist(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, double eps) {
+    return std::sqrt(point_segment_dist2(p, a, b, eps));
+}
+
 double point_segment_dist2(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, double eps) {
     const glm::dvec2 ab = b - a;
     const glm::dvec2 ap = p - a;

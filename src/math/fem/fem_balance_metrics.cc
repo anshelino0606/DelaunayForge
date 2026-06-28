@@ -11,6 +11,7 @@
 #include "math/fem/fem_error_analysis.h"
 #include "math/fem/fem_quadrature.h"
 #include "math/math_.h"
+#include "geom/geom2d/vec.h"
 
 namespace fem {
 
@@ -91,10 +92,10 @@ BalanceMetrics compute_balance_metrics(
     }
 
     double area = 0, int_f = 0, int_cu = 0;
-    for (const auto& E : mesh.elems) {
-        const auto& P0 = mesh.nodes[to_size(E.v[0])];
-        const auto& P1 = mesh.nodes[to_size(E.v[1])];
-        const auto& P2 = mesh.nodes[to_size(E.v[2])];
+    for (const FEMMesh::Elem& E : mesh.elems) {
+        const FEMMesh::Node& P0 = mesh.nodes[to_size(E.v[0])];
+        const FEMMesh::Node& P1 = mesh.nodes[to_size(E.v[1])];
+        const FEMMesh::Node& P2 = mesh.nodes[to_size(E.v[2])];
         const double u0 = u[to_size(E.v[0])], u1 = u[to_size(E.v[1])], u2 = u[to_size(E.v[2])];
         area += E.area;
         for (int q = 0; q < TriQuad3::n; ++q) {
@@ -112,13 +113,12 @@ BalanceMetrics compute_balance_metrics(
     out.integral_cu = int_cu;
 
     double fl=0, fr=0, fb=0, ft=0, qi=0, il=0;
-    for (const auto& e : mesh.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : mesh.edges_bc) {
         if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
         
-
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const double L = std::hypot(B.x-A.x, B.y-A.y);
+        const FEMMesh::Node& A = mesh.nodes[to_size(e.a)];
+        const FEMMesh::Node& B = mesh.nodes[to_size(e.b)];
+        const double L = geom2d::vec::dist(A, B);
         if (!(L > 0.0)) continue;
 
         const double mx = 0.5*(A.x+B.x), my = 0.5*(A.y+B.y);
@@ -136,7 +136,7 @@ BalanceMetrics compute_balance_metrics(
             q_out_int = (-e.gN) * L;
         } else {
             // Dirichlet: reconstruct from element gradient
-            auto key = pack_edge(e.a, e.b);
+            uint64_t key = pack_edge(e.a, e.b);
             auto it = adj.find(key);
             if (it == adj.end() || !it->second.boundary) continue;
 
@@ -144,9 +144,9 @@ BalanceMetrics compute_balance_metrics(
             if (!is_valid(v0, mesh.nodes.size()) || !is_valid(v1, mesh.nodes.size()) || !is_valid(v2, mesh.nodes.size()))
                 continue;
 
-            const auto& PP0 = mesh.nodes[to_size(v0)];
-            const auto& PP1 = mesh.nodes[to_size(v1)];
-            const auto& PP2 = mesh.nodes[to_size(v2)];
+            const FEMMesh::Node& PP0 = mesh.nodes[to_size(v0)];
+            const FEMMesh::Node& PP1 = mesh.nodes[to_size(v1)];
+            const FEMMesh::Node& PP2 = mesh.nodes[to_size(v2)];
             double grad_phi[3][2];
             compute_p1_gradients<double>(PP0.x,PP0.y, PP1.x,PP1.y, PP2.x,PP2.y, grad_phi);
 

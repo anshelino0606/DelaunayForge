@@ -5,6 +5,7 @@
 #include <vector>
 #include "bc_value.h"
 #include "math/types.h"
+#include <glm/vec2.hpp>
 
 namespace fem {
 
@@ -21,9 +22,16 @@ struct Triplet {
 };
 
 struct FEMMesh {
-    struct Node {
-        Real x = 0.0;
-        Real y = 0.0;
+    struct Node : public glm::vec<2, Real, glm::defaultp> {
+        Node() {
+            x = 0.0;
+            y = 0.0;
+        }
+
+        Node(Real in_x, Real in_y, Index in_id) {
+            x = in_x, y = in_y, id = in_id;
+        }
+
         Index id = invalid_index;
     };
 
