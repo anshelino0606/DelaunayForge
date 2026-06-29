@@ -5,6 +5,6 @@
 
 namespace fem::plot {
 
-bool svg(const std::string& absolute_path, const SceneData& scene_data);
+bool export_svg(const std::string& absolute_path, const SceneData& scene_data);
 
 }

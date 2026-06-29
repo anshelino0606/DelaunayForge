@@ -5,6 +5,6 @@
 
 namespace fem::plot {
 
-bool png(const std::string& absolute_path, const SceneData& scene_data);
+bool export_png(const std::string& absolute_path, const SceneData& scene_data);
 
 }

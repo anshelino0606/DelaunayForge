@@ -11,7 +11,7 @@
 
 namespace fem::plot {
 
-bool png(const std::string& absolute_path, const SceneData& scene) {
+bool export_png(const std::string& absolute_path, const SceneData& scene) {
     if (!scene.last_mesh) {
         return false;
     }

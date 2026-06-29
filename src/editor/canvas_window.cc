@@ -484,14 +484,7 @@ void CanvasWindow::draw_export_popup() {
 }
 
 bool CanvasWindow::export_svg(const std::string& absolute_path) const {
-        plot::SceneData scene_data{
-        .last_mesh     = last_mesh_,
-        .pde           = last_pde_,
-        .viewport_size = state_.size,
-        .point_radius  = point_radius_,
-        .settings      = export_settings_
-    };
-    return plot::svg(absolute_path, scene_data);
+    return plot::export_svg(absolute_path, get_plot_scene_data());
 }
 
 void CanvasWindow::draw_mesh(PlanarMeshComponent* mesh) {
@@ -622,14 +615,7 @@ bool CanvasWindow::is_draw_info_valid(const CanvasWindowDrawInfo& draw_info) con
 }
 
 bool CanvasWindow::export_png(const std::string& absolute_path) const {
-    plot::SceneData scene_data{
-        .last_mesh     = last_mesh_,
-        .pde           = last_pde_,
-        .viewport_size = state_.size,
-        .point_radius  = point_radius_,
-        .settings      = export_settings_
-    };
-    return plot::png(absolute_path, scene_data);
+    return plot::export_png(absolute_path, get_plot_scene_data());
 }
 
 void CanvasWindow::draw_selection_overlay(const CanvasWindowDrawInfo& draw_info) {
@@ -830,6 +816,16 @@ void CanvasWindow::toggle_edge_selection(int edge_id) {
 
 bool CanvasWindow::is_edge_selected(int edge_id) const {
     return selected_edge_ids_.count(edge_id) > 0;
+}
+
+plot::SceneData CanvasWindow::get_plot_scene_data() const {
+    return {
+        .last_mesh     = last_mesh_,
+        .pde           = last_pde_,
+        .viewport_size = state_.size,
+        .point_radius  = point_radius_,
+        .settings      = export_settings_
+    };
 }
 
 }

@@ -1,5 +1,5 @@
 #include "svg.h"
-#include "vector_canvas.h"
+#include "svg_canvas.h"
 #include "colorbar.h"
 #include "viewport.h"
 #include "utils.h"
@@ -13,7 +13,7 @@
 
 namespace fem::plot {
 
-bool svg(const std::string& absolute_path, const SceneData& scene) {
+bool export_svg(const std::string& absolute_path, const SceneData& scene) {
     if (!scene.last_mesh) {
         return false;
     }
@@ -55,7 +55,7 @@ bool svg(const std::string& absolute_path, const SceneData& scene) {
     const Color8 bg_color = dark ? COLOR_DARK_BG : COLOR_LIGHT_BG;
     const Color8 fg_color = dark ? COLOR_DARK_FG : COLOR_LIGHT_FG;
 
-    VectorCanvas canvas(vp.canvas_width(), vp.canvas_height());
+    svg::Canvas canvas(vp.canvas_width(), vp.canvas_height());
 
     canvas.add_rect(0, 0, vp.canvas_width(), vp.canvas_height(), canvas.to_rgb(bg_color));
 
@@ -78,7 +78,7 @@ bool svg(const std::string& absolute_path, const SceneData& scene) {
     if (scene.settings.include_axes) {
         const float frame_w = std::max(1.0f, FRAME_THICKNESS_MOD * static_cast<float>(scale));
         canvas.add_rect(vp.plot_x0(), vp.plot_y0(), vp.plot_width(), vp.plot_height(), 
-                        std::string(VectorCanvas::Val::NONE), canvas.to_rgb(fg_color), frame_w);
+                        std::string(svg::val::NONE), canvas.to_rgb(fg_color), frame_w);
     }
 
     canvas.start_group("plotClip");

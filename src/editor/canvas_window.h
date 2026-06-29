@@ -5,6 +5,7 @@
 #include "smooth_stroke_tool.h"
 #include "tools/canvas_inspector.h"
 #include "plot/export_settings.h"
+#include "plot/scene_data.h"
 
 #include <string>
 #include <unordered_set>
@@ -119,6 +120,8 @@ private:
     void request_triangulation(const PlanarTriangulationSessionConfig& config);
 
     bool is_draw_info_valid(const CanvasWindowDrawInfo& draw_info) const;
+
+    plot::SceneData get_plot_scene_data() const;
 };
 
 }
