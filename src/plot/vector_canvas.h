@@ -37,13 +37,7 @@ public:
 
     bool save_svg(const std::string& path);
 
-private:
-    int32_t width_ = 0; 
-    int32_t height_ = 0;
-    std::ostringstream ss_;
-
-    static constexpr std::string_view XML_HEADER = R"(<?xml version="1.0" encoding="UTF-8"?>)";
-    static constexpr std::string_view SVG_CLOSE  = "</svg>\n";
+    std::string to_rgb(const Color8& c);
 
     struct Attr {
         static constexpr std::string_view X               = "x";
@@ -82,8 +76,15 @@ private:
         static constexpr std::string_view DEFAULT_FONT    = "Helvetica, Arial, sans-serif";
     };
 
+private:
+    int32_t width_ = 0; 
+    int32_t height_ = 0;
+    std::ostringstream ss_;
+
+    static constexpr std::string_view XML_HEADER = R"(<?xml version="1.0" encoding="UTF-8"?>)";
+    static constexpr std::string_view SVG_CLOSE  = "</svg>\n";
+
     std::string escape(std::string_view data);
-    std::string to_rgb(const Color8& c);
     double opacity(const Color8& c);
 
     std::string make_attr(std::string_view name, std::string_view value) const;
