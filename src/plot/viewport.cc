@@ -72,4 +72,17 @@ Viewport::Viewport(const ViewportInitInfo& init_info) {
     }
 }
 
+glm::vec2 Viewport::to_px(double wx, double wy) const noexcept {
+    const double tx = (wx - world_bounds_.mins.x) / world_w_;
+    const double ty = (world_bounds_.maxs.y - wy) / world_h_;
+    return glm::vec2(
+        static_cast<float>(plot_x0_ + tx * plot_width_),
+        static_cast<float>(plot_y0_ + ty * plot_height_)
+    );
+}
+
+glm::vec2 Viewport::to_px(const glm::dvec2& wpos) const noexcept {
+    return to_px(wpos.x, wpos.y);
+}
+
 }

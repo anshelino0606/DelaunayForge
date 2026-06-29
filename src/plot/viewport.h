@@ -2,7 +2,7 @@
 
 #include "colorbar.h"
 #include "geom/geom2d/types.h"
-#include <imgui/imgui.h>
+#include <glm/vec2.hpp>
 
 namespace fem::plot {
 
@@ -26,20 +26,8 @@ class Viewport {
 public:
     Viewport(const ViewportInitInfo& init_info);
 
-    template<typename VecType = ImVec2>
-    [[nodiscard]] VecType to_px(double wx, double wy) const noexcept {
-        const double tx = (wx - world_bounds_.mins.x) / world_w_;
-        const double ty = (world_bounds_.maxs.y - wy) / world_h_;
-        return VecType(
-            static_cast<float>(plot_x0_ + tx * plot_width_),
-            static_cast<float>(plot_y0_ + ty * plot_height_)
-        );
-    }
-
-    template<typename VecType = ImVec2>
-    [[nodiscard]] VecType to_px(const glm::dvec2& wpos) const noexcept {
-        return to_px<VecType>(wpos.x, wpos.y);
-    }
+    [[nodiscard]] glm::vec2 to_px(double wx, double wy) const noexcept;
+    [[nodiscard]] glm::vec2 to_px(const glm::dvec2& wpos) const noexcept;
 
     int32_t canvas_width() const noexcept { return canvas_width_; }
     int32_t canvas_height() const noexcept { return canvas_height_; }

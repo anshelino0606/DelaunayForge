@@ -4,14 +4,14 @@
 
 namespace fem::plot {
 
-inline std::string fmt_no_plus(double x) {
+std::string fmt_no_plus(double x) {
     std::string s = std::format("{:.6g}", x);
     if (auto p = s.find("e+"); p != std::string::npos) s.erase(p + 1, 1);
     return s;
 }
 
 // Compute "nice" rounded tick values a la MATLAB / matplotlib
-inline double nice_num(double x, bool round_it) {
+double nice_num(double x, bool round_it) {
     if (x == 0.0) return 0.0;
     const double exp_v = std::floor(std::log10(std::abs(x)));
     const double frac = std::abs(x) / std::pow(10.0, exp_v);
@@ -30,7 +30,7 @@ inline double nice_num(double x, bool round_it) {
     return std::copysign(nice * std::pow(10.0, exp_v), x);
 }
 
-inline std::vector<double> nice_ticks(double lo, double hi, int32_t target_ticks) {
+std::vector<double> nice_ticks(double lo, double hi, int32_t target_ticks) {
     if (hi - lo < 1e-14) return { lo };
     const double range = nice_num(hi - lo, false);
     const double d = nice_num(range / std::max(1, target_ticks - 1), true);
@@ -46,7 +46,7 @@ inline std::vector<double> nice_ticks(double lo, double hi, int32_t target_ticks
 }
 
 // Format tick value: use integer when possible, otherwise compact float
-inline std::string fmt_tick(double v) {
+std::string fmt_tick(double v) {
     if (std::abs(v) < 1e-12) return "0";
     if (std::abs(v) >= 1.0 && std::abs(v - std::round(v)) < 1e-9)
         return std::format("{}", (long long)std::round(v));
@@ -86,7 +86,7 @@ bool glyph_5x7(char c, uint8_t rows[7]) {
     }
 }
 
-ImVec2 measure_text_5x7(std::string_view text, int px_scale) {
+glm::vec2 measure_text_5x7(std::string_view text, int px_scale) {
     const int cw = 5 * px_scale;
     const int ch = 7 * px_scale;
     const int sp = 1 * px_scale;
@@ -97,7 +97,7 @@ ImVec2 measure_text_5x7(std::string_view text, int px_scale) {
         (void)c;
     }
     if (!text.empty()) w -= sp;
-    return ImVec2((float)w, (float)ch);
+    return glm::vec2((float)w, (float)ch);
 }
 
 }
