@@ -47,6 +47,7 @@ function(fem_target_common_includes target)
     ${PROJECT_SOURCE_DIR}/src/math/fem
     ${PROJECT_SOURCE_DIR}/src/renderer
     ${PROJECT_SOURCE_DIR}/src/rhi
+    ${PROJECT_SOURCE_DIR}/src/plot
     ${PROJECT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends
