@@ -16,7 +16,9 @@ class Canvas {
 public:
     Canvas(int32_t width, int32_t height);
 
-    void add_rect(int32_t x, int32_t y, int32_t w, int32_t h, const std::string& fill, const std::string& stroke = std::string(val::NONE), float stroke_w = 0);
+    // nullptr fill or stroke = NONE
+    void add_rect(int32_t x, int32_t y, int32_t w, int32_t h, const Color8* fill, const Color8* stroke = nullptr, float stroke_w = 0);
+    void add_gradient_rect(int32_t x, int32_t y, int32_t w, int32_t h, const std::string& gradient, const Color8* stroke = nullptr, float stroke_w = 0);
     
     void start_defs();
     void end_defs();
@@ -30,7 +32,7 @@ public:
     void start_group(const std::string& clip_path_id = "");
     void end_group();
 
-    void add_polygon(const std::vector<std::pair<float, float>>& pts, const std::string& fill, float opacity = 1.0f);
+    void add_polygon(const std::vector<std::pair<float, float>>& pts, const Color8& fill, float opacity = 1.0f);
     void add_line(float x1, float y1, float x2, float y2, const Color8& c, float width);
     void add_circle(float cx, float cy, float r, const Color8& c);
     void add_text(float x, float y, const std::string& text, const Color8& c, int32_t size, const std::string& anchor = std::string(svg::val::START));
@@ -38,14 +40,13 @@ public:
 
     bool save_svg(const std::string& path);
 
-    std::string to_rgb(const Color8& c);
-
 private:
     int32_t width_ = 0; 
     int32_t height_ = 0;
     std::ostringstream ss_;
 
     std::string escape(std::string_view data);
+    std::string to_rgb(const Color8& c);
     double opacity(const Color8& c);
 
     std::string make_attr(std::string_view name, std::string_view value) const;

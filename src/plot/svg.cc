@@ -57,7 +57,7 @@ bool export_svg(const std::string& absolute_path, const SceneData& scene) {
 
     svg::Canvas canvas(vp.canvas_width(), vp.canvas_height());
 
-    canvas.add_rect(0, 0, vp.canvas_width(), vp.canvas_height(), canvas.to_rgb(bg_color));
+    canvas.add_rect(0, 0, vp.canvas_width(), vp.canvas_height(), &bg_color);
 
     canvas.start_defs();
     canvas.add_clip_path("plotClip", vp.plot_x0(), vp.plot_y0(), vp.plot_width(), vp.plot_height());
@@ -78,7 +78,7 @@ bool export_svg(const std::string& absolute_path, const SceneData& scene) {
     if (scene.settings.include_axes) {
         const float frame_w = std::max(1.0f, FRAME_THICKNESS_MOD * static_cast<float>(scale));
         canvas.add_rect(vp.plot_x0(), vp.plot_y0(), vp.plot_width(), vp.plot_height(), 
-                        std::string(svg::val::NONE), canvas.to_rgb(fg_color), frame_w);
+            nullptr, &fg_color, frame_w);
     }
 
     canvas.start_group("plotClip");
@@ -102,7 +102,7 @@ bool export_svg(const std::string& absolute_path, const SceneData& scene) {
                 poly_pts[1] = { p1.x, p1.y };
                 poly_pts[2] = { p2.x, p2.y };
                 
-                canvas.add_polygon(poly_pts, canvas.to_rgb(fill_color), 0.784f);
+                canvas.add_polygon(poly_pts, fill_color, 0.784f);
             }
         }
     }
@@ -192,7 +192,7 @@ bool export_svg(const std::string& absolute_path, const SceneData& scene) {
         const Colorbar& cb = vp.colorbar(); 
         const Rect& rect = cb.rect();
         
-        canvas.add_rect(rect.x, rect.y, rect.w, rect.h, "url(#cbGrad)", canvas.to_rgb(fg_color), static_cast<float>(scale));
+        canvas.add_gradient_rect(rect.x, rect.y, rect.w, rect.h, "url(#cbGrad)", &fg_color, static_cast<float>(scale));
 
         const float text_x = static_cast<float>(rect.x + rect.w) + static_cast<float>(std::lround(cb.label_gap()));
         const int32_t label_scale = cb.bitmap_label_scale();

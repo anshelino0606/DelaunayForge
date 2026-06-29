@@ -14,11 +14,24 @@ Canvas::Canvas(int32_t width, int32_t height) : width_(width), height_(height) {
         << " viewBox=\"0 0 " << width_ << " " << height_ << "\">\n";
 }
 
-void Canvas::add_rect(int32_t x, int32_t y, int32_t w, int32_t h, const std::string& fill, const std::string& stroke, float stroke_w) {
+void Canvas::add_rect(int32_t x, int32_t y, int32_t w, int32_t h, const Color8* fill, const Color8* stroke, float stroke_w) {
+    std::string fill_str = fill ? to_rgb(*fill) : val::NONE.data();
+    std::string stroke_str = stroke ? to_rgb(*stroke) : val::NONE.data();
+
     ss_ << "  <rect" 
         << make_attr(attr::X, x) << make_attr(attr::Y, y) 
         << make_attr(attr::WIDTH, w) << make_attr(attr::HEIGHT, h)
-        << make_attr(attr::FILL, fill) << make_attr(attr::STROKE, stroke) 
+        << make_attr(attr::FILL, fill_str) << make_attr(attr::STROKE, stroke_str)
+        << make_attr(attr::STROKE_WIDTH, stroke_w) << "/>\n";
+}
+
+void Canvas::add_gradient_rect(int32_t x, int32_t y, int32_t w, int32_t h, const std::string& gradient, const Color8* stroke, float stroke_w) {
+    std::string stroke_str = stroke ? to_rgb(*stroke) : val::NONE.data();
+
+    ss_ << "  <rect" 
+        << make_attr(attr::X, x) << make_attr(attr::Y, y) 
+        << make_attr(attr::WIDTH, w) << make_attr(attr::HEIGHT, h)
+        << make_attr(attr::FILL, gradient) << make_attr(attr::STROKE, stroke_str)
         << make_attr(attr::STROKE_WIDTH, stroke_w) << "/>\n";
 }
 
@@ -63,13 +76,13 @@ void Canvas::end_group() {
     ss_ << "  </g>\n"; 
 }
 
-void Canvas::add_polygon(const std::vector<std::pair<float, float>>& pts, const std::string& fill, float opacity) {
+void Canvas::add_polygon(const std::vector<std::pair<float, float>>& pts, const Color8& fill, float opacity) {
     std::string points_str;
     for (size_t i = 0; i < pts.size(); ++i) {
         points_str += std::to_string(pts[i].first) + "," + std::to_string(pts[i].second) + (i == pts.size() - 1 ? "" : " ");
     }
     ss_ << "    <polygon" << make_attr(attr::POINTS, points_str)
-        << make_attr(attr::FILL, fill) << make_attr(attr::FILL_OPACITY, opacity)
+        << make_attr(attr::FILL, to_rgb(fill)) << make_attr(attr::FILL_OPACITY, opacity)
         << make_attr(attr::STROKE, svg::val::NONE) << "/>\n";
 }
 
