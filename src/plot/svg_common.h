@@ -7,6 +7,37 @@ namespace fem::plot::svg {
 constexpr std::string_view XML_HEADER = R"(<?xml version="1.0" encoding="UTF-8"?>)";
 constexpr std::string_view SVG_CLOSE  = "</svg>\n";
 
+namespace tag {
+
+constexpr std::string_view RECT_OPEN          = "  <rect";
+constexpr std::string_view RECT_CLOSE         = "/>\n";
+    
+constexpr std::string_view DEFS_OPEN          = "  <defs>\n";
+constexpr std::string_view DEFS_CLOSE         = "  </defs>\n";
+    
+constexpr std::string_view CLIP_PATH_OPEN     = "    <clipPath";
+constexpr std::string_view CLIP_PATH_CLOSE    = "</clipPath>\n";
+    
+constexpr std::string_view LINEAR_GRAD_OPEN   = "    <linearGradient";
+constexpr std::string_view LINEAR_GRAD_CLOSE  = "    </linearGradient>\n";
+    
+constexpr std::string_view STOP               = "      <stop";
+    
+constexpr std::string_view GROUP_OPEN         = "  <g";
+constexpr std::string_view GROUP_OPEN_RAW     = "  <g>\n";
+constexpr std::string_view GROUP_CLOSE        = "  </g>\n";
+    
+constexpr std::string_view POLYGON            = "    <polygon";
+constexpr std::string_view LINE               = "    <line";
+constexpr std::string_view CIRCLE             = "    <circle";
+    
+constexpr std::string_view TEXT_OPEN          = "  <text";
+constexpr std::string_view TEXT_CLOSE         = "</text>\n";
+
+constexpr std::string_view END_NEW_LINE       = ">\n";
+
+}
+
 namespace attr {
 
 constexpr std::string_view X               = "x";

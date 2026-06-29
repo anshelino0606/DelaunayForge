@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <string_view>
+#include <format>
 
 namespace fem {
 
@@ -49,8 +50,10 @@ private:
     std::string to_rgb(const Color8& c);
     double opacity(const Color8& c);
 
-    std::string make_attr(std::string_view name, std::string_view value) const;
-    std::string make_attr(std::string_view name, double value) const;
+    template<typename T>
+    std::string make_attr(std::string_view name, T value) const {
+        return std::format(" {}=\"{}\"", name, value);
+    }
 };
 
 }
