@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <cmath>
 #include <format>
+#include <algorithm>
 
 namespace fem::plot {
 
@@ -98,6 +99,40 @@ glm::vec2 measure_text_5x7(std::string_view text, int px_scale) {
     }
     if (!text.empty()) w -= sp;
     return glm::vec2((float)w, (float)ch);
+}
+
+Color8 color_for_u(double u_min, double u_max, double u, bool have_bounds) {
+    if (!have_bounds) {
+        return Color8(128, 128, 128, 220);
+    }
+    
+    double t = (u_max > u_min) ? (u - u_min) / (u_max - u_min) : 0.0;
+    t = std::clamp(t, 0.0, 1.0);
+    
+    struct Stop { double t; uint8_t r, g, b; };
+    constexpr Stop stops[] = {
+        {0.00,  53,  42, 135}, 
+        {0.25,  15, 111, 198}, 
+        {0.50,   3, 167, 133}, 
+        {0.75, 144, 205,  57}, 
+        {1.00, 249, 251,  21}
+    };
+    
+    int32_t seg = 0;
+    for (int32_t i = 0; i < 4; ++i) { 
+        if (t >= stops[i+1].t) seg = i+1; else break; 
+    }
+    
+    const Stop& s0 = stops[std::min(seg, 3)]; 
+    const Stop& s1 = stops[std::min(seg, 3) + 1];
+    double lt = std::clamp((t - s0.t) / (s1.t - s0.t), 0.0, 1.0);
+    
+    return Color8(
+        static_cast<uint8_t>(std::lround(s0.r + lt * (s1.r - s0.r))), 
+        static_cast<uint8_t>(std::lround(s0.g + lt * (s1.g - s0.g))), 
+        static_cast<uint8_t>(std::lround(s0.b + lt * (s1.b - s0.b))), 
+        230
+    );
 }
 
 }

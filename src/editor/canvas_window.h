@@ -4,6 +4,7 @@
 #include "viewport.h"
 #include "smooth_stroke_tool.h"
 #include "tools/canvas_inspector.h"
+#include "plot/export_settings.h"
 
 #include <string>
 #include <unordered_set>
@@ -62,21 +63,7 @@ private:
     float  vertex_pick_radius_px_ = 8.0f;
     float  edge_pick_radius_px_   = 10.0f;
 
-    struct ExportSettings {
-        enum class Theme : uint8_t { Dark, Light };
-
-        Theme theme = Theme::Light;
-        int scale_factor = 2;           // export resolution = canvas_size * scale_factor
-        bool include_axes = true;
-        bool include_solution = true;
-        bool include_mesh = true;
-        bool include_points = true;
-        bool include_colorbar = true;   // only applies when PDE solution bounds are available
-        bool include_boundary_conditions = true;
-        bool include_bc_legend = true;  // show legend for boundary conditions
-
-        int format_index = 0; // 0 = PNG, 1 = SVG
-    } export_settings_;
+    plot::ExportSettings export_settings_;
 
     bool export_popup_requested_ = false;
     bool export_popup_open_ = false;

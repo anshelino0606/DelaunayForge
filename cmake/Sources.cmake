@@ -26,7 +26,12 @@ function(fem_collect_sources out_sources)
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4/*.h
   )
 
-  list(APPEND project_sources ${root_headers} ${imgui_sources} ${imgui_backend} ${lz4_sources} ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
+  file(GLOB stb_sources CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb/*.h
+  )
+
+  list(APPEND project_sources ${root_headers} ${imgui_sources} ${imgui_backend} ${lz4_sources} ${stb_sources} ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
 
   list(FILTER project_sources EXCLUDE REGEX ".*/gui/delaunay_gui_ref\\.cc$")
   list(FILTER project_sources EXCLUDE REGEX ".*/opengl/.*")
