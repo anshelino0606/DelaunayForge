@@ -54,9 +54,13 @@ struct FEMMesh {
     std::vector<Elem> elems;
     std::vector<EdgeBC> edges_bc;
 
-    [[nodiscard]] int dof_count() const;
-    [[nodiscard]] Count dof_count_count() const;
-    [[nodiscard]] Index dof_count_index() const;
+    template<typename CountType = size_t>
+    [[nodiscard]] CountType dof_count() const {
+        if constexpr (std::is_same_v<size_t, CountType>)
+            return nodes.size();
+        else
+            return static_cast<CountType>(nodes.size());
+    }
 };
 
 } // namespace fem

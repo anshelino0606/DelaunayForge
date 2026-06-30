@@ -36,7 +36,7 @@ constexpr uint64_t compile_time_fnv1(const char (&str)[len]) {
 constexpr uint64_t runtime_fnv1(std::string_view str) {
     uint64_t hash = FNV_OFFSET_BASIS;
 
-    for (int i = str.length() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(str.length()) - 1; i >= 0; --i) {
         char c = str[i];
         hash *= FNV_PRIME;
         hash ^= static_cast<uint8_t>(c);

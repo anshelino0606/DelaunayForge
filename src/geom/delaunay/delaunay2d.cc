@@ -291,7 +291,7 @@ std::vector<int> DelaunayTriangulator::find_bad_triangles(const Point2D& point) 
     std::vector<int> bad;
     glm::dvec2 p = point.p;
     
-    for (size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         if (!triangles[i].valid) continue;
         
         const Tri& tri = triangles[i];
@@ -391,7 +391,7 @@ void DelaunayTriangulator::build_adjacency() {
         p.incident_triangles.clear();
     }
     
-    for (size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         Tri& t = triangles[i];
         if (!t.valid) continue;
         
@@ -452,7 +452,7 @@ void DelaunayTriangulator::build_adjacency() {
         return id;
     };
 
-    for (size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         const Tri& t = triangles[i];
         if (!t.valid) continue;
         
@@ -466,7 +466,7 @@ void DelaunayTriangulator::build_adjacency() {
     }
 
     // Set triangle adjacency for edges
-    for (size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         const Tri& t = triangles[i];
         if (!t.valid) continue;
         
@@ -510,17 +510,16 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
     std::unordered_map<PackedEdge, Pair, PackedEdgeHash> edge2pair;
     edge2pair.reserve(triangles.size() * 3);
 
-    for (std::size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         if (!triangles[i].valid) continue;
-        const auto& tri = triangles[i];
-        const int t = static_cast<int>(i);
+        const Tri& tri = triangles[i];
 
-        edge2pair[pack_edge(tri.v[0], tri.v[1])].add(t);
-        edge2pair[pack_edge(tri.v[1], tri.v[2])].add(t);
-        edge2pair[pack_edge(tri.v[2], tri.v[0])].add(t);
+        edge2pair[pack_edge(tri.v[0], tri.v[1])].add(i);
+        edge2pair[pack_edge(tri.v[1], tri.v[2])].add(i);
+        edge2pair[pack_edge(tri.v[2], tri.v[0])].add(i);
     }
 
-    for (std::size_t i = 0; i < triangles.size(); ++i) {
+    for (int32_t i = 0; i < triangles.size(); ++i) {
         if (!triangles[i].valid) continue;
         auto& tri = triangles[i];
         const int t = static_cast<int>(i);
@@ -699,7 +698,7 @@ void DelaunayTriangulator::edge_flipping_pass() {
         improved = false;
         update_triangle_neighbors();
         
-        for (size_t i = 0; i < triangles.size(); ++i) {
+        for (int32_t i = 0; i < triangles.size(); ++i) {
             if (!triangles[i].valid) continue;
             
             const Tri& tri = triangles[i];
@@ -715,8 +714,8 @@ void DelaunayTriangulator::edge_flipping_pass() {
 
                 if (is_constrained(shared_edge.a, shared_edge.b)) continue;
 
-                if (should_flip_edge(static_cast<int>(i), neighbor_idx, shared_edge)) {
-                    if (flip_edge(static_cast<int>(i), neighbor_idx, shared_edge)) {
+                if (should_flip_edge(i, neighbor_idx, shared_edge)) {
+                    if (flip_edge(i, neighbor_idx, shared_edge)) {
                         improved = true;
                     }
                     break;
@@ -736,7 +735,7 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
         // find worst triangle
         double worst = 1e9;
         int worst_tid = -1;
-        for (size_t i=0;i<triangles.size();++i) {
+        for (int32_t i = 0;i < triangles.size(); ++i) {
             const Tri& t = triangles[i];
             if (!t.valid) continue;
 
@@ -1373,7 +1372,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
         constrained.median_angle = R.median_angle;
         constrained.avg_angle = R.avg_angle;
         constrained.triangle_count = R.triangle_count;
-        constrained.point_count = R.points.size();
+        constrained.point_count = static_cast<int>(R.points.size());
         constrained.points = points;
         constrained.triangles.reserve(triangles.size());
         for (const auto& t : triangles) if (t.valid) constrained.triangles.push_back(t);

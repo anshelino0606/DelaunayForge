@@ -3,7 +3,7 @@
 namespace fem {
 
 class Object;
-class Struct;
+struct Struct;
 class StructTypeInfo;
 
 class WidgetInternal {

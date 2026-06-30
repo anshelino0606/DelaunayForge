@@ -9,13 +9,13 @@ uint64_t Utils::compress(
     std::vector<uint8_t>& out_compressed_data
 )
 {
-    uint64_t compressStaging = LZ4_compressBound(in_data.size());
+    uint64_t compressStaging = LZ4_compressBound((int)in_data.size());
     out_compressed_data.resize(compressStaging);
     uint64_t compressedDataSize = LZ4_compress_default(
         (const char*)in_data.data(), 
         (char*)out_compressed_data.data(), 
-        in_data.size(), 
-        compressStaging
+        (int)in_data.size(), 
+        (int)compressStaging
     );
     out_compressed_data.resize(compressedDataSize);
     return compressedDataSize;
@@ -31,8 +31,8 @@ void Utils::decompress(
     LZ4_decompress_safe(
         (const char*)compressedDataPtr, 
         (char*)out_data.data(), 
-        compressedSize, 
-        out_data.size()
+        (int)compressedSize, 
+        (int)out_data.size()
     );
 }
 

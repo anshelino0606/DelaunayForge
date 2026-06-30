@@ -57,9 +57,9 @@ void FractionalElementContribution::compute(
     Af_ = glm::dmat3(0.0);
     bf_ = glm::dvec3(0.0);
 
-    const Index N = mesh.dof_count_index();
+    const Index N = mesh.dof_count<Index>();
     const std::vector<double> exterior_diag = approximate_integral_exterior_diagonal(
-        mesh, nodal_mass, static_cast<double>(spec.s), static_cast<double>(spec.scale));
+        mesh, nodal_mass, spec.s, spec.scale);
 
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
@@ -72,8 +72,8 @@ void FractionalElementContribution::compute(
                 mesh.nodes[to_size(j)],
                 nodal_mass[to_size(i)],
                 nodal_mass[to_size(j)],
-                static_cast<double>(spec.s),
-                static_cast<double>(spec.scale)
+                spec.s,
+                spec.scale
             );
         }
     }
@@ -91,8 +91,8 @@ void FractionalElementContribution::compute(
                 mesh.nodes[to_size(j)],
                 nodal_mass[to_size(i)],
                 nodal_mass[to_size(j)],
-                static_cast<double>(spec.s),
-                static_cast<double>(spec.scale)
+                spec.s,
+                spec.scale
             );
         }
         Af_[a][a] = diag_accumulation;
@@ -108,7 +108,7 @@ void FractionalElementContribution::compute(
     Af_ = glm::dmat3(0.0);
     bf_ = glm::dvec3(0.0);
 
-    const Index N = mesh.dof_count_index();
+    const Index N = mesh.dof_count<Index>();
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
             if (a == b) continue;
@@ -120,8 +120,8 @@ void FractionalElementContribution::compute(
                 mesh.nodes[to_size(j)],
                 nodal_mass[to_size(i)],
                 nodal_mass[to_size(j)],
-                static_cast<double>(spec.s),
-                static_cast<double>(spec.scale)
+                spec.s,
+                spec.scale
             );
         }
     }
@@ -139,8 +139,8 @@ void FractionalElementContribution::compute(
                 mesh.nodes[to_size(j)],
                 nodal_mass[to_size(i)],
                 nodal_mass[to_size(j)],
-                static_cast<double>(spec.s),
-                static_cast<double>(spec.scale)
+                spec.s,
+                spec.scale
             );
         }
         Af_[a][a] = diag_accumulation;

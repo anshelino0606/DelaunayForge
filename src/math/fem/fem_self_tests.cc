@@ -129,7 +129,7 @@ RobinSlabTestResult run_robin_slab_self_test() {
     double max_err = 0.0;
     double got_A = 0.0;
 
-    for (Index i = 0; i < mesh.dof_count_index(); ++i) {
+    for (Index i = 0; i < mesh.dof_count<Index>(); ++i) {
         const double x = mesh.nodes[to_size(i)].x;
         const double u_exact = A_exact * x + uD0;
         const double err = std::abs(sol.solution_u[to_size(i)] - u_exact);
@@ -144,7 +144,7 @@ RobinSlabTestResult run_robin_slab_self_test() {
     Count cnt_l = 0;
     Count cnt_r = 0;
 
-    for (Index i = 0; i < mesh.dof_count_index(); ++i) {
+    for (Index i = 0; i < mesh.dof_count<Index>(); ++i) {
         if (mesh.nodes[to_size(i)].x < 1e-12) {
             u_left += sol.solution_u[to_size(i)];
             ++cnt_l;
@@ -240,7 +240,7 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
 
         auto& L = res.levels[lvl];
         L.n = n;
-        L.dofs = mesh.dof_count();
+        L.dofs = static_cast<int>(mesh.dof_count());
         L.h = h;
         L.l2 = em.l2;
         L.h1 = em.h1_semi;

@@ -75,7 +75,7 @@ private:
     }
 
     void draw_element_header(const std::string& element_label, size_t element_idx) {
-        ImGui::PushID(element_idx);
+        ImGui::PushID(static_cast<int>(element_idx));
 
         std::string element_label_with_idx = std::format("{} #{}", element_label, element_idx);
         bool element_header_result = draw_header(element_label_with_idx);

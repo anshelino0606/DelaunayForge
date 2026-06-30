@@ -26,8 +26,8 @@ Camera::Camera(glm::vec3 position)
 
 // change camera direction (mouse movement)
 void Camera::updateCameraDirection(double dx, double dy) {
-    yaw += dx;
-    pitch += dy;
+    yaw += static_cast<float>(dx);
+    pitch += static_cast<float>(dy);
 
     if (pitch > 89.0f) {
         pitch = 89.0f;
@@ -68,7 +68,7 @@ void Camera::updateCameraPos(CameraDirection direction, double dt) {
 // change camera zoom (scroll wheel)
 void Camera::updateCameraZoom(double dy) {
     if (zoom >= 1.0f && zoom <= 45.0f) {
-        zoom -= dy;
+        zoom -= static_cast<float>(dy);
     }
     else if (zoom < 1.0f) {
         zoom = 1.0f;

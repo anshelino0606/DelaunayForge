@@ -59,10 +59,10 @@ BalanceMetrics compute_balance_metrics(
     const BalanceMetricsConfig& cfg)
 {
     BalanceMetrics out{};
-    out.dofs = mesh.dof_count();
+    out.dofs = static_cast<int>(mesh.dof_count());
     out.h    = mesh_h_max_edge<double>(mesh);
 
-    if (to_count(u.size()) != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
+    if (u.size() != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
         return out;
 
     out.xmin = out.ymin =  math::DINF;

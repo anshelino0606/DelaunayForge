@@ -41,9 +41,9 @@ FEM_BEGIN_PROPERTY_REGISTER(UIAutoGenExample_SlidersAndDrags)
     FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, vec2_slider, ClampMin(1.5f), ClampMax(6.5f));
     FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, vec3_slider, ClampMin(35.0f), ClampMax(255.4f));
     FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, vec4_slider, ClampMin(12.0f), ClampMax(188.5f));
-    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec2_slider, ClampMin(-256.66), ClampMax(-32.5));
-    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec3_slider, ClampMin(-1000.0), ClampMax(1000.0));
-    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec4_slider, ClampMin(2000.0), ClampMax(5000));
+    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec2_slider, ClampMin(-256.66f), ClampMax(-32.5f));
+    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec3_slider, ClampMin(-1000.0f), ClampMax(1000.0f));
+    FEM_REGISTER_PROPERTY(UIAutoGenExample_SlidersAndDrags, dvec4_slider, ClampMin(2000.0f), ClampMax(5000));
 }
 FEM_END_PROPERTY_REGISTER(UIAutoGenExample_SlidersAndDrags);
 

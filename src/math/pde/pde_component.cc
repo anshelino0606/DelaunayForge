@@ -79,23 +79,23 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
         }
 
         const FEMMesh& fem_mesh = *cached_sol.transient_mesh;
-        const int N = fem_mesh.dof_count();
+        const size_t N = fem_mesh.dof_count();
 
         const bool is_wave_newmark = preset->solve_kind() == SolveKind::WaveNewmark || preset->is_exactly<PDEPreset_Wave>();
 
-        if (!cached_sol.transient_initialized || (int)cached_sol.solution.solution_u.size() != N) {
-            cached_sol.solution.solution_u.assign((size_t)N, 0.0);
-            for (int i = 0; i < N; ++i) {
-                const auto& node = fem_mesh.nodes[(size_t)i];
+        if (!cached_sol.transient_initialized || cached_sol.solution.solution_u.size() != N) {
+            cached_sol.solution.solution_u.assign(N, 0.0);
+            for (size_t i = 0; i < N; ++i) {
+                const auto& node = fem_mesh.nodes[i];
                 if (preset->has_initial_condition()) [[likely]] {
-                    cached_sol.solution.solution_u[(size_t)i] = preset->evaluate_initial_condition(node.x, node.y);
+                    cached_sol.solution.solution_u[i] = preset->evaluate_initial_condition(node.x, node.y);
                 }
             }
 
             const DirichletMask D = build_dirichlet_mask(fem_mesh);
-            for (int i = 0; i < N; ++i) {
-                if (D.is_dirichlet[(size_t)i]) {
-                    cached_sol.solution.solution_u[(size_t)i] = D.value[(size_t)i];
+            for (size_t i = 0; i < N; ++i) {
+                if (D.is_dirichlet[i]) {
+                    cached_sol.solution.solution_u[i] = D.value[i];
                 }
             }
 
@@ -112,20 +112,20 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
             cached_sol.transient_v.clear();
             cached_sol.transient_a.clear();
             if (is_wave_newmark) {
-                cached_sol.transient_v.assign((size_t)N, 0.0);
-                cached_sol.transient_a.assign((size_t)N, 0.0);
-                for (int i = 0; i < N; ++i) {
-                    const auto& node = fem_mesh.nodes[(size_t)i];
+                cached_sol.transient_v.assign(N, 0.0);
+                cached_sol.transient_a.assign(N, 0.0);
+                for (size_t i = 0; i < N; ++i) {
+                    const auto& node = fem_mesh.nodes[i];
                     if (preset->has_initial_velocity()) [[likely]] {
-                        cached_sol.transient_v[(size_t)i] = preset->evaluate_initial_velocity(node.x, node.y);
+                        cached_sol.transient_v[i] = preset->evaluate_initial_velocity(node.x, node.y);
                     }
                 }
 
                 const DirichletMask D = build_dirichlet_mask(fem_mesh);
-                for (int i = 0; i < N; ++i) {
-                    if (D.is_dirichlet[(size_t)i]) {
-                        cached_sol.transient_v[(size_t)i] = 0.0;
-                        cached_sol.transient_a[(size_t)i] = 0.0;
+                for (size_t i = 0; i < N; ++i) {
+                    if (D.is_dirichlet[i]) {
+                        cached_sol.transient_v[i] = 0.0;
+                        cached_sol.transient_a[i] = 0.0;
                     }
                 }
             }
@@ -143,8 +143,9 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
         if (target_time + 1e-12 < cached_sol.transient_time) {
             if (!cached_sol.history_time.empty()) {
                 int best = 0;
-                for (int i = 0; i < (int)cached_sol.history_time.size(); ++i) {
-                    if (cached_sol.history_time[(size_t)i] <= target_time + 1e-12) best = i;
+                for (size_t i = 0; i < cached_sol.history_time.size(); ++i) {
+                    if (cached_sol.history_time[i] <= target_time + 1e-12) 
+                        best = static_cast<int>(i);
                 }
                 cached_sol.seek_history(best);
                 cached_sol.transient_time = cached_sol.history_time[(size_t)cached_sol.history_cursor];
@@ -182,10 +183,9 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                 const double u_coeff = dt2 * (0.5 - beta);
                 const double v_coeff = dt * (1.0 - gamma);
 
-                for (int i = 0; i < N; ++i) {
-                    const size_t idx = (size_t)i;
-                    u_pred[idx] = u_n[idx] + dt * v_n[idx] + u_coeff * a_n[idx];
-                    v_pred[idx] = v_n[idx] + v_coeff * a_n[idx];
+                for (size_t i = 0; i < N; ++i) {
+                    u_pred[i] = u_n[i] + dt * v_n[i] + u_coeff * a_n[i];
+                    v_pred[i] = v_n[i] + v_coeff * a_n[i];
                 }
 
                 SolveRequest request = make_request(next_t, u_pred, SolveKind::WaveNewmark);
@@ -197,19 +197,18 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
                     cached_sol.transient_a.assign((size_t)N, 0.0);
 
                     const double inv_beta_dt2 = 1.0 / (beta * dt * dt);
-                    for (int i = 0; i < N; ++i) {
-                        const size_t idx = (size_t)i;
-                        const double a_np1 = inv_beta_dt2 * (u_np1[idx] - u_pred[idx]);
-                        cached_sol.transient_a[idx] = a_np1;
-                        cached_sol.transient_v[idx] = v_pred[idx] + dt * gamma * a_np1;
+                    for (size_t i = 0; i < N; ++i) {
+                        const double a_np1 = inv_beta_dt2 * (u_np1[i] - u_pred[i]);
+                        cached_sol.transient_a[i] = a_np1;
+                        cached_sol.transient_v[i] = v_pred[i] + dt * gamma * a_np1;
                     }
 
                     // Clamp wave state at Dirichlet nodes.
                     const DirichletMask D = build_dirichlet_mask(fem_mesh);
-                    for (int i = 0; i < N; ++i) {
-                        if (D.is_dirichlet[(size_t)i]) {
-                            cached_sol.transient_v[(size_t)i] = 0.0;
-                            cached_sol.transient_a[(size_t)i] = 0.0;
+                    for (size_t i = 0; i < N; ++i) {
+                        if (D.is_dirichlet[i]) {
+                            cached_sol.transient_v[i] = 0.0;
+                            cached_sol.transient_a[i] = 0.0;
                         }
                     }
 
@@ -262,7 +261,7 @@ const DifferentialEquationSolution& PDEComponent::solve(MeshComponent* target_me
         last_mesh_ = std::make_unique<FEMMesh>(fem_mesh);
 
         int dirichlet_edges = 0;
-        for (const auto& e : fem_mesh.edges_bc) {
+        for (const FEMMesh::EdgeBC& e : fem_mesh.edges_bc) {
             if (e.type == fem::BCType::Dirichlet) ++dirichlet_edges;
         }
         if (cached_sol.solution.is_ready()) {

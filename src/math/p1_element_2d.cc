@@ -40,7 +40,7 @@ bool P1Element2D::apply_dirichlet_elimination(const std::vector<uint8_t>& is_dir
         points_[0]->id, points_[1]->id, points_[2]->id
     };
 
-    int32_t is_dirichlet_count = is_dirichlet.size();
+    int32_t is_dirichlet_count = (int32_t)is_dirichlet.size();
 
     glm::bvec3 p1_has_dirichlet{false};
 
@@ -57,13 +57,13 @@ bool P1Element2D::apply_dirichlet_elimination(const std::vector<uint8_t>& is_dir
             return dirichlet_values[(size_t)gvid];
         };
 
-        for (size_t li = 0; li < 3; ++li) {
+        for (int32_t li = 0; li < 3; ++li) {
             if (p1_has_dirichlet[li]) {
                 dirichlet_vertices_[li] = point_ids[li];
                 continue;
             }
 
-            for (size_t lj = 0; lj < 3; ++lj) {
+            for (int32_t lj = 0; lj < 3; ++lj) {
                 if (!p1_has_dirichlet[lj])
                     continue;
 
@@ -86,8 +86,8 @@ void P1Element2D::compute_element() {
     
     be_ = glm::dvec3(f_coeff_ * area_ / 3.0); 
 
-    for (size_t i = 0; i < 3; ++i) { // Row
-        for (size_t j = 0; j < 3; ++j) { // Column
+    for (int32_t i = 0; i < 3; ++i) { // Row
+        for (int32_t j = 0; j < 3; ++j) { // Column
             Ke_[j][i] = a_coeff_ * (b_[i] * b_[j] + c_[i] * c_[j]) * inv4A;
             Ce_[j][i] = mfac * ((i == j) ? 2.0 : 1.0);
             Ae_[j][i] = Ke_[j][i] + Ce_[j][i];

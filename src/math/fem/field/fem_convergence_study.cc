@@ -307,7 +307,7 @@ ConvergenceDataPoint ConvergenceStudyEngine::compute_level_error(
     ConvergenceDataPoint pt;
     pt.level = level;
     pt.h = mesh_h_max_edge<double>(mesh);
-    pt.dofs = mesh.dof_count();
+    pt.dofs = static_cast<int>(mesh.dof_count());
     
     if (!exact || !exact->has_u) {
         return pt;
@@ -341,7 +341,7 @@ ConvergenceDataPoint ConvergenceStudyEngine::compute_level_error_vs_reference(
     ConvergenceDataPoint pt;
     pt.level = level;
     pt.h = mesh_h_max_edge<double>(mesh);
-    pt.dofs = mesh.dof_count();
+    pt.dofs = static_cast<int>(mesh.dof_count());
     
     auto err = compute_error_vs_reference<double>(
         mesh, solution, ref_mesh, ref_solution, &locator_, remove_mean_offset
