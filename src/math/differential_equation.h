@@ -1,6 +1,8 @@
 #ifndef FEM_DIFFERENTIAL_EQUATION_H
 #define FEM_DIFFERENTIAL_EQUATION_H
 
+#include "core/variant.h"
+#include "log_categories.h"
 #include <functional>
 #include <variant>
 #include <type_traits>
@@ -12,7 +14,7 @@ template<typename Real = double>
 class Coefficient {
     using ConstType  = Real;
     using LambdaType = std::function<Real(Real, Real)>;
-    std::variant<ConstType, LambdaType> data_;
+    Variant<ConstType, LambdaType> data_;
 
 public:
     Coefficient() : data_(Real(0)) {}
@@ -27,17 +29,26 @@ public:
     std::enable_if_t<!std::is_convertible_v<F, Real>, Coefficient&>
     operator=(F&& f) { data_ = LambdaType(std::forward<F>(f)); return *this; }
 
-
     Real operator()(Real x, Real y) const {
-        return std::visit([&](auto&& arg) -> Real {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, ConstType>) return arg;
-            else return arg(x, y);
-        }, data_);
+        return data_.visit(
+            [](ConstType val) -> Real { 
+                return val; 
+            },
+            [&](auto const& func) -> Real { 
+                return func(x, y); 
+            }
+        );
     }
 
-    bool is_constant() const noexcept { return std::holds_alternative<ConstType>(data_); }
-    Real value() const { return std::get<ConstType>(data_); }
+    bool is_constant() const noexcept { return data_.template is<ConstType>(); }
+    Real value() const {
+        std::optional<ConstType> val = data_.template try_get<ConstType>(); 
+        if (val == std::nullopt) {
+            LOGT_ERROR(LogMath, "Coefficient uses lambda!");
+            return 0.0;
+        }
+        return *val;
+    }
 
     void set_constant(Real v) { data_ = v; }
     template<typename F> void set_function(F&& f) { data_ = LambdaType(std::forward<F>(f)); }

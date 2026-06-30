@@ -239,7 +239,7 @@ FEMSystem assemble_and_solve_fractional_spectral_P1(
     FEMSystem sys;
 
     if (!P.mesh) [[unlikely]] return sys;
-    const auto* cfg = std::get_if<FractionalSpectralSpec>(&P.operator_spec());
+    const auto* cfg = P.operator_spec().get<FractionalSpectralSpec>();
     if (!cfg) [[unlikely]] return sys;
 
     const FEMMesh& mesh = *P.mesh;

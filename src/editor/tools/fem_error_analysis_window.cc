@@ -1690,13 +1690,13 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                     if (is_classical) {
                         slot.energy.bilinear_energy = compute_classical_bilinear_energy(
                             local_mesh, sol.solution_u, prob.a);
-                    } else if (std::holds_alternative<FractionalSpectralSpec>(prob.operator_spec())) {
+                    } else if (prob.operator_spec().is<FractionalSpectralSpec>()) {
                         // Spectral: energy computed inside the spectral solver
                         slot.energy.bilinear_energy = sol.spectral_bilinear_energy;
                     } else {
-                        const bool is_integral = std::holds_alternative<FractionalIntegralSpec>(prob.operator_spec());
-                        const auto* integral = std::get_if<FractionalIntegralSpec>(&prob.operator_spec());
-                        const auto* regional = std::get_if<FractionalRegionalSpec>(&prob.operator_spec());
+                        const bool is_integral = prob.operator_spec().is<FractionalIntegralSpec>();
+                        const auto* integral = prob.operator_spec().get<FractionalIntegralSpec>();
+                        const auto* regional = prob.operator_spec().get<FractionalRegionalSpec>();
                         const double s_loc = integral ? (double)integral->s : (regional ? (double)regional->s : 0.5);
                         const double C_loc = integral ? (double)integral->scale : (regional ? (double)regional->scale : 1.0);
                         slot.energy.bilinear_energy = compute_fractional_bilinear_energy(
@@ -1704,14 +1704,14 @@ void FEMErrorAnalysisWindow::draw_section_fractional_comparison_(const DrawInfo&
                     }
 
                     // Dirichlet boundary work — operator-consistent computation
-                    if (is_classical || std::holds_alternative<FractionalSpectralSpec>(prob.operator_spec())) {
+                    if (is_classical || prob.operator_spec().is<FractionalSpectralSpec>()) {
                         // Classical / Spectral: gradient-flux-based
                         slot.energy.dirichlet_work = compute_dirichlet_boundary_work(
                             local_mesh, sol.solution_u, prob.a);
                     } else {
-                        const bool is_integral = std::holds_alternative<FractionalIntegralSpec>(prob.operator_spec());
-                        const auto* integral = std::get_if<FractionalIntegralSpec>(&prob.operator_spec());
-                        const auto* regional = std::get_if<FractionalRegionalSpec>(&prob.operator_spec());
+                        const bool is_integral = prob.operator_spec().is<FractionalIntegralSpec>();
+                        const auto* integral = prob.operator_spec().get<FractionalIntegralSpec>();
+                        const auto* regional = prob.operator_spec().get<FractionalRegionalSpec>();
                         const double s_loc = integral ? (double)integral->s : (regional ? (double)regional->s : 0.5);
                         const double C_loc = integral ? (double)integral->scale : (regional ? (double)regional->scale : 1.0);
                         slot.energy.dirichlet_work = compute_nonlocal_dirichlet_work(

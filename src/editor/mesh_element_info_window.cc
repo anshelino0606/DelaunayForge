@@ -198,23 +198,22 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
     ImGui::Text("[% .3e  % .3e  % .3e]", be.x, be.y, be.z);
 
     const OperatorSpec& op = prob.operator_spec();
-    if (!std::holds_alternative<LocalEllipticSpec>(op)) {
+    if (!op.is<LocalEllipticSpec>()) {
         ImGui::Separator();
-        std::visit([&](const auto& spec) {
-            using T = std::decay_t<decltype(spec)>;
-            if constexpr (std::is_same_v<T, FractionalIntegralSpec>) {
-                ImGui::Text("Fractional enabled: Integral  s=%.6g  scale=%.6g",
-                            (double)spec.s, (double)spec.scale);
-            } else if constexpr (std::is_same_v<T, FractionalRegionalSpec>) {
-                ImGui::Text("Fractional enabled: Regional  s=%.6g  scale=%.6g",
-                            (double)spec.s, (double)spec.scale);
-            } else if constexpr (std::is_same_v<T, FractionalSpectralSpec>) {
-                ImGui::Text("Fractional enabled: Spectral  s=%.6g  scale=%.6g",
-                            (double)spec.s, (double)spec.scale);
-            }
-        }, op);
+        op.visit(
+            [&](const FractionalIntegralSpec& spec) {
+                ImGui::Text("Fractional enabled: Integral  s=%.6g  scale=%.6g", spec.s, spec.scale);
+            },
+            [&](const FractionalRegionalSpec& spec) {
+                ImGui::Text("Fractional enabled: Regional  s=%.6g  scale=%.6g", spec.s, spec.scale);
+            },
+            [&](const FractionalSpectralSpec& spec) {
+                ImGui::Text("Fractional enabled: Spectral  s=%.6g  scale=%.6g", spec.s, spec.scale);
+            },
+            [&](const LocalEllipticSpecT<double>& spec) {}
+        );
 
-        if (const auto* integral = std::get_if<FractionalIntegralSpec>(&op)) {
+        if (const auto* integral = op.get<FractionalIntegralSpec>()) {
             FractionalElementContribution frac_element({v0, v1, v2});
             frac_element.compute(cached_fem_, *integral, prob, nodal_mass_);
 
@@ -230,7 +229,7 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
             ImGui::Text("[% .3e  % .3e  % .3e]", bf[0], bf[1], bf[2]);
 
             ImGui::TextDisabled("Note: integral operator adds an exterior-interaction diagonal; there is no true per-element Ke.");
-        } else if (const auto* regional = std::get_if<FractionalRegionalSpec>(&op)) {
+        } else if (const auto* regional = op.get<FractionalRegionalSpec>()) {
             FractionalElementContribution frac_element({v0, v1, v2});
             frac_element.compute(cached_fem_, *regional, prob, nodal_mass_);
 
@@ -246,7 +245,7 @@ void MeshElementInfoWindow::draw_triangle_(const DelaunayTriangulationResult& R,
             ImGui::Text("[% .3e  % .3e  % .3e]", bf[0], bf[1], bf[2]);
 
             ImGui::TextDisabled("Note: regional operator only includes in-domain interactions.");
-        } else if (std::holds_alternative<FractionalSpectralSpec>(op)) {
+        } else if (op.is<FractionalSpectralSpec>()) {
             ImGui::TextDisabled("Spectral: local K/M/C are meaningful; operator acts via eigenmodes (see spectral solver path).");
         } else {
             ImGui::TextDisabled("Regional/other: not shown here (define what matrix you want to inspect).");

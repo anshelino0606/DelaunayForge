@@ -163,7 +163,7 @@ struct AssembleP1OperatorVisitor {
 } // namespace
 
 FEMSystem assemble_operator_P1(const FEMProblem& P, const OperatorSpec& op) {
-    return std::visit(AssembleP1OperatorVisitor{P}, op);
+    return op.apply(AssembleP1OperatorVisitor{P});
 }
 
 FEMSystem assemble_and_solve_operator_P1(
@@ -174,7 +174,7 @@ FEMSystem assemble_and_solve_operator_P1(
     FEMProblem local = P;
     local.set_operator_spec(op);
 
-    if (std::holds_alternative<FractionalSpectralSpec>(op)) {
+    if (op.is<FractionalSpectralSpec>()) {
         return assemble_and_solve_spectral_fractional_P1(local, out);
     }
 
