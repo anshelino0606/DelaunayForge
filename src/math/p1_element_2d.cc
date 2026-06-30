@@ -1,16 +1,18 @@
 #include "p1_element_2d.h"
 #include "fem/fem_problem.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/tri.h"
+#include "geom/geom2d/vec.h"
+#include "geom/common_types_2d.h"
 
 namespace fem {
 
 P1Element2D::P1Element2D(const Point2D& p0, const Point2D& p1, const Point2D& p2, const FEMProblem& problem) {
-    area_ = Geometry2D::tri_area(p0, p1, p2);
+    area_ = geom2d::tri::area(p0, p1, p2);
     if (!is_area_valid()) return;
 
-    Geometry2D::tri_shape_coefficients(p0, p1, p2, b_, c_);
+    geom2d::tri::shape_coefficients(p0, p1, p2, b_, c_);
 
-    centroid_ = Geometry2D::tri_centroid(p0, p1, p2);
+    centroid_ = geom2d::tri::centroid(p0, p1, p2);
 
     a_coeff_ = problem.a(centroid_.x, centroid_.y);
     c_coeff_ = problem.c(centroid_.x, centroid_.y);
@@ -24,7 +26,7 @@ P1Element2D::P1Element2D(const Point2D& p0, const Point2D& p1, const Point2D& p2
 void P1Element2D::apply_edge_bc(const FEMMesh::EdgeBC* bc, uint32_t local_a, uint32_t local_b) {
     if (!bc || !is_area_valid()) return;
 
-    const double L = Geometry2D::hypot(*points_[local_a], *points_[local_b]);
+    const double L = geom2d::vec::dist(*points_[local_a], *points_[local_b]);
 
     if (bc->type == fem::BCType::Robin) {
         add_robin_edge(local_a, local_b, L, bc->k, bc->g);

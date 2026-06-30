@@ -6,9 +6,9 @@
 #include <functional>
 #include <optional>
 #include <glm/glm.hpp>
-#include "delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "math/expression_parser.h"
-#include "geom/parametric_curve_config.h"
+#include "geom/configs/parametric_curve_config.h"
 
 namespace fem {
 

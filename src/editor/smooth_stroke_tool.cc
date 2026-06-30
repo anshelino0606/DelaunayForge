@@ -1,7 +1,7 @@
 #include "smooth_stroke_tool.h"
 #include "editor/viewport.h"
 #include "math/curve.h"
-#include "delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include <utility>
 #include <imgui.h>
 #include <cmath>

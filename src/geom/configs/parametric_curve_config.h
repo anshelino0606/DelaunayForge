@@ -3,6 +3,7 @@
 
 #include "core/object/object.h"
 #include "core/object/property.h"
+#include "math/math_.h"
 
 namespace fem {
 
@@ -49,7 +50,7 @@ struct ParametricCurveConfig : public Struct {
     double growth_rate = 1.0;
     
     double t_start = 0.0;
-    double t_end = 2.0 * 3.14159265358979323846;
+    double t_end = math::TWO_PI;
     
     int sample_count = 128;
     

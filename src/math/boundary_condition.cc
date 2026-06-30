@@ -1,9 +1,12 @@
 #include "boundary_condition.h"
 
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "geom/planar_mesh/planar_mesh_component.h"
 #include "log_categories.h"
 #include "math/fem/bc_value.h"
+#include "math/math_.h"
+#include "geom/geom2d/vec.h"
+#include "geom/geom2d/types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -123,7 +126,7 @@ static ProjRes project_point_to_loop_s(const std::vector<Point2D>& loop,
                                        const glm::dvec2& P,
                                        double& out_total_len) {
     ProjRes out;
-    out.dist2 = std::numeric_limits<double>::infinity();
+    out.dist2 = math::DINF;
     out.s = 0.0;
     out_total_len = 0.0;
 
@@ -304,7 +307,7 @@ static bool select_best_loop_by_samples(const std::vector<std::vector<Point2D>>&
     out_projected_samples.clear();
     if (loops.empty() || sample_positions.empty()) return false;
 
-    double best_score = std::numeric_limits<double>::infinity();
+    double best_score = math::DINF;
 
     for (int loop_index = 0; loop_index < (int)loops.size(); ++loop_index) {
         const auto& loop = loops[loop_index];
@@ -351,24 +354,20 @@ static bool compute_loop_diagnostics(const std::vector<Point2D>& loop,
     out_diag = 0.0;
     if (loop.size() < 2) return false;
 
-    double minx = loop.front().x();
-    double miny = loop.front().y();
-    double maxx = minx;
-    double maxy = miny;
+    geom2d::BoundingBox bbox;
+    bbox.mins = loop.front().p;
+    bbox.maxs = loop.front().p;
 
     for (std::size_t i = 0; i < loop.size(); ++i) {
-        minx = std::min(minx, loop[i].x());
-        miny = std::min(miny, loop[i].y());
-        maxx = std::max(maxx, loop[i].x());
-        maxy = std::max(maxy, loop[i].y());
+        bbox.update(loop[i]);
 
         const glm::dvec2 A(loop[i].x(), loop[i].y());
         const glm::dvec2 B(loop[(i + 1) % loop.size()].x(),
                            loop[(i + 1) % loop.size()].y());
-        out_total_len += std::hypot(B.x - A.x, B.y - A.y);
+        out_total_len += geom2d::vec::dist(A, B);
     }
 
-    out_diag = std::hypot(maxx - minx, maxy - miny);
+    out_diag = bbox.dist();
     return out_total_len > 0.0;
 }
 
@@ -388,7 +387,7 @@ static bool pick_boundary_vertex_by_param(const DelaunayTriangulationResult& R,
     const glm::dvec2 target = point_at_s(loop, loop_total_len, target_s, seg);
 
     int best = -1;
-    double best_d2 = std::numeric_limits<double>::infinity();
+    double best_d2 = math::DINF;
     for (int i = 0; i < (int)R.points.size(); ++i) {
         if (!R.points[i].on_boundary) continue;
         const auto& P = R.points[i].p;
@@ -427,11 +426,11 @@ static bool pick_boundary_vertex_by_param(const DelaunayTriangulationResult& R,
     }
 
     int best_on_loop = -1;
-    double best_on_loop_ds = std::numeric_limits<double>::infinity();
-    double best_on_loop_d2 = std::numeric_limits<double>::infinity();
+    double best_on_loop_ds = math::DINF;
+    double best_on_loop_d2 = math::DINF;
 
     int best_any = -1;
-    double best_any_d2 = std::numeric_limits<double>::infinity();
+    double best_any_d2 = math::DINF;
 
     for (int i = 0; i < (int)R.points.size(); ++i) {
         if (!R.points[i].on_boundary) continue;
@@ -663,8 +662,7 @@ std::unordered_map<int, std::vector<std::pair<int, int>>> BoundaryCondition::bui
     std::unordered_map<int, std::vector<std::pair<int, int>>> G;
     for (int eid = 0; eid < (int)R.edges.size(); ++eid) {
         const auto& e = R.edges[eid];
-        if (!e.on_boundary) continue;
-        if ((std::size_t)e.a >= R.points.size() || (std::size_t)e.b >= R.points.size()) continue;
+        if (!e.valid_vertices(R.points.size()) || !e.on_boundary) continue;
 
         G[e.a].push_back({e.b, eid});
         G[e.b].push_back({e.a, eid});
@@ -796,7 +794,7 @@ static int find_nearest_boundary_vertex(const DelaunayTriangulationResult& R,
     constexpr double exact_eps2 = exact_eps * exact_eps;
 
     int nearest_vertex = -1;
-    double nearest_d2 = std::numeric_limits<double>::infinity();
+    double nearest_d2 = math::DINF;
 
     for (std::size_t i = 0; i < R.points.size(); ++i) {
         const glm::dvec2& point = R.points[i].p;
@@ -906,7 +904,7 @@ bool BoundaryCondition::capture_parameterization_from_edges(const DelaunayTriang
         // Just search R.points for the closest point to end_world.
         const glm::dvec2& end_world = remap_segments_.front().end_world;
         int best = -1;
-        double best_d2 = std::numeric_limits<double>::infinity();
+        double best_d2 = math::DINF;
         for (int i = 0; i < (int)R.points.size(); ++i) {
             const glm::dvec2& p = R.points[i].p;
             const double d2 = (p.x - end_world.x)*(p.x - end_world.x) +

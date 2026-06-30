@@ -1,15 +1,10 @@
 #include "fractal_domain_generator.h"
-#include "fractal_domain_config.h"
+#include "geom/configs/fractal_domain_config.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <numeric>
 #include <random>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace fem {
 
@@ -260,7 +255,7 @@ FractalDomainGenerator::make_base_polygon(const FractalDomainConfig& cfg) {
         const double s = std::max(1e-6, cfg.snowflake_side_length);
         const double R = s / std::sqrt(3.0);
         for (int k = 0; k < 3; ++k) {
-            double a = (2.0 * M_PI) * (double)k / 3.0 + M_PI / 2.0;
+            double a = (2.0 * math::PI) * (double)k / 3.0 + math::PI / 2.0;
             poly.push_back(cfg.center + glm::dvec2(R * std::cos(a), R * std::sin(a)));
         }
         return poly;

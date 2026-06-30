@@ -2,7 +2,8 @@
 #include "pde_preset.h"
 #include "pde_presets.h"
 #include "log_categories.h"
-#include "geom/mesh_component.h"
+#include "math/fem/fem_integrators.h"
+#include "geom/mesh/mesh_component.h"
 #include "math/entities/planar_math_entity.h"
 #include "core/entity/entity.h"
 #include "math/fem/fem_solve_dispatcher.h"
@@ -381,8 +382,8 @@ const DifferentialEquationSolution& PDEComponent::solve_combined_domain() {
     solution_.solution_u.reserve(mesh_comps.size() * 1000);
 
     bool any_valid = false;
-    double combined_min = std::numeric_limits<double>::max();
-    double combined_max = std::numeric_limits<double>::lowest();
+    double combined_min = math::DMAX;
+    double combined_max = math::DMIN;
 
     for (MeshComponent* mesh_comp : mesh_comps) {
         const auto& sub_solution = solve(mesh_comp);
@@ -452,8 +453,8 @@ std::pair<double, double> PDEComponent::get_global_bounds() const noexcept {
         return {cached_global_min_, cached_global_max_};
     }
 
-    double global_min = std::numeric_limits<double>::max();
-    double global_max = std::numeric_limits<double>::lowest();
+    double global_min = math::DMAX;
+    double global_max = math::DMIN;
 
     if (solution_.is_ready()) [[unlikely]] {
         global_min = solution_.u_min;

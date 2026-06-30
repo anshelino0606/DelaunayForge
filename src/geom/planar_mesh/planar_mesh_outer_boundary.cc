@@ -1,6 +1,6 @@
 #include "planar_mesh_outer_boundary.h"
 #include "planar_mesh_component.h"
-#include "geom/fractal_domain_generator.h"
+#include "geom/generators/fractal_domain_generator.h"
 #include "log_categories.h"
 #include <random>
 

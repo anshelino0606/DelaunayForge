@@ -1,4 +1,5 @@
 #include "random_inner_boundary_config.h"
+#include "math/math_.h"
 
 namespace fem {
 
@@ -72,7 +73,7 @@ void RandomInnerBoundaryConfig::on_source_type_changed() {
         parametric_template.radius = 18.0;
         parametric_template.sample_count = 48;
         parametric_template.t_start = 0.0;
-        parametric_template.t_end = 2.0 * 3.14159265358979323846;
+        parametric_template.t_end = math::TWO_PI;
     } else {
         fractal_template.preset = FractalPreset::KochSnowflake;
         fractal_template.iterations = 1;

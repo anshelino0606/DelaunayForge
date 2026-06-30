@@ -3,7 +3,7 @@
 #include "core/entity/entity.h"
 #include "core/entity/events.h"
 #include "math/entities/planar_math_entity.h"
-#include "geom/mesh_component.h"
+#include "geom/mesh/mesh_component.h"
 #include <imgui/imgui.h>
 
 namespace fem {

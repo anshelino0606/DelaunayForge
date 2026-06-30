@@ -43,4 +43,13 @@ FEM_BEGIN_PROPERTY_REGISTER(Point2D)
 }
 FEM_END_PROPERTY_REGISTER(Point2D);
 
+[[nodiscard]] std::size_t PackedEdgeHash::operator()(PackedEdge k) const noexcept {
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    return static_cast<std::size_t>(k);
+}
+
 }

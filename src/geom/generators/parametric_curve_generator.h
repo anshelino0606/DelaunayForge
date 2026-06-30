@@ -1,8 +1,7 @@
 #ifndef FEM_PARAMETRIC_CURVE_H
 #define FEM_PARAMETRIC_CURVE_H
 
-// Why is Point2D struct in delaunay_types.h??? We must move it somewhere, for example to the geom_2d_types.h
-#include "delaunay_types.h"
+#include "geom/common_types_2d.h"
 #include <string>
 #include <optional>
 

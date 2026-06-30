@@ -11,6 +11,7 @@
 #include "fem_mesh.h"
 #include "fem_quadrature.h"
 #include "fem_assembler.h"
+#include "geom/geom2d/vec.h"
 
 namespace fem {
 
@@ -318,13 +319,13 @@ static inline void compute_p1_gradients(
 template<typename Real = double>
 static inline Real mesh_h_max_edge(const FEMMesh& M) {
     Real h = Real(0);
-    for (const auto& E : M.elems) {
-        const auto& A = M.nodes[(size_t)E.v[0]];
-        const auto& B = M.nodes[(size_t)E.v[1]];
-        const auto& C = M.nodes[(size_t)E.v[2]];
-        const Real ab = (Real)std::hypot(B.x - A.x, B.y - A.y);
-        const Real bc = (Real)std::hypot(C.x - B.x, C.y - B.y);
-        const Real ca = (Real)std::hypot(A.x - C.x, A.y - C.y);
+    for (const FEMMesh::Elem& E : M.elems) {
+        const FEMMesh::Node& A = M.nodes[(size_t)E.v[0]];
+        const FEMMesh::Node& B = M.nodes[(size_t)E.v[1]];
+        const FEMMesh::Node& C = M.nodes[(size_t)E.v[2]];
+        const Real ab = (Real)geom2d::vec::dist(A, B);
+        const Real bc = (Real)geom2d::vec::dist(B, C);
+        const Real ca = (Real)geom2d::vec::dist(C, A);
         h = std::max(h, std::max(ab, std::max(bc, ca)));
     }
     return h;
@@ -818,9 +819,9 @@ static inline std::vector<Real> compute_residual_indicators(
         }
 
         const Real h_T = Real(2) * E.area / std::max({
-            std::hypot(P1.x - P0.x, P1.y - P0.y),
-            std::hypot(P2.x - P1.x, P2.y - P1.y),
-            std::hypot(P0.x - P2.x, P0.y - P2.y)
+            geom2d::vec::dist(P1, P0),
+            geom2d::vec::dist(P2, P1),
+            geom2d::vec::dist(P0, P2)
         });
 
         eta[ti] = h_T * h_T * res_l2_sq;

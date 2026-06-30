@@ -1,7 +1,7 @@
 #include "fem_matrix_assembly_preview.h"
 #include "math/fem/fem_problem.h"
 #include "math/fem/fem_mesh.h"
-#include "geom/geometry_2d.h"
+#include "geom/geom2d/tri.h"
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -151,7 +151,7 @@ void FEMMatrixAssembler<Real>::assemble_element(const FEMProblem& problem,
     const double A = tri_area(x0, y0, x1, y1, x2, y2);
     if (A <= 1e-30) return;
 
-    const glm::dvec2 centroid = Geometry2D::tri_centroid(x0, y0, x1, y1, x2, y2);
+    const glm::dvec2 centroid = geom2d::tri::centroid(x0, y0, x1, y1, x2, y2);
 
     const double a = static_cast<double>(problem.a(centroid.x, centroid.y));
     const double c = static_cast<double>(problem.c(centroid.x, centroid.y));

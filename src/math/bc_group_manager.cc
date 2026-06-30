@@ -1,6 +1,6 @@
 #include "bc_group_manager.h"
 #include "geom/planar_mesh/planar_mesh_component.h"
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 #include "log_categories.h"
 #include <algorithm>
 #include <unordered_map>

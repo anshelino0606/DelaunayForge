@@ -1,12 +1,7 @@
 #include "pde_rhs_kinds.h"
 #include "log_categories.h"
+#include "math/math_.h"
 #include <cmath>
-
-
-// TODO: move to constants all the occurences
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 using namespace fem::RHSParameters;
 
@@ -86,10 +81,9 @@ FEM_DEFINE_RHS(
 
 void apply(DifferentialEquation& equation, const RHS_PoissonManufacturedParams& ctx) {
     const double A_val = ctx.A_->value(equation.time);
-    const double pi = M_PI;
-    const double coeff = 2.0 * pi * pi * A_val;
-    equation.f.set_function([coeff, pi](double x, double y) {
-        return coeff * std::sin(pi * x) * std::sin(pi * y);
+    const double coeff = 2.0 * math::PI * math::PI * A_val;
+    equation.f.set_function([coeff](double x, double y) {
+        return coeff * std::sin(math::PI * x) * std::sin(math::PI * y);
     });
 }
 

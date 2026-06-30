@@ -1,7 +1,7 @@
 #ifndef FEM_TRIANGULATION_SESSION_H
 #define FEM_TRIANGULATION_SESSION_H
 
-#include "delaunay_mesh_generator.h"
+#include "geom/delaunay/delaunay_mesh_generator.h"
 
 #include <memory>
 #include <vector>

@@ -1,7 +1,7 @@
 #ifndef FEM_TRIANGULATION_SESSION_CONFIG_H
 #define FEM_TRIANGULATION_SESSION_CONFIG_H
 
-#include "delaunay_mesh_generator_config.h"
+#include "geom/delaunay/delaunay_mesh_generator_config.h"
 #include "math/density_functions.h"
 #include "math/density_config.h"
 

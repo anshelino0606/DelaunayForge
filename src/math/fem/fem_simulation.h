@@ -5,7 +5,10 @@
 
 #include "fem_mesh.h"
 #include "fem_assembler.h"
-#include "geom/delaunay_mesh_generator.h"
+#include "fem_mesh_builder.h"
+#include "geom/delaunay/delaunay_mesh_generator.h"
+#include "math/differential_equation.h"
+#include "math/differential_equation_solution.h"
 
 namespace fem {
 

@@ -39,6 +39,32 @@ struct DelaunayTriangulationResult : public Struct {
     double avg_angle = 0.0;
     int triangle_count = 0;
     int point_count = 0;
+
+    /// Returns true if `idx` is a valid point index.
+    [[nodiscard]] bool valid_point(int idx) const noexcept {
+        return idx >= 0 && static_cast<std::size_t>(idx) < points.size();
+    }
+    
+    /// Returns true if `idx` refers to valid triangle
+    [[nodiscard]] bool valid_triangle(int idx) const noexcept {
+        if (idx < 0 || static_cast<std::size_t>(idx) >= triangles.size()) 
+            return false;
+
+        const Tri& tri = triangles[idx];
+        if (!tri.valid) 
+            return false;
+
+        return tri.valid_vertices(points.size());
+    }
+    
+    /// Returns true if `idx` refers to a valid edge
+    [[nodiscard]] bool valid_edge(int idx) const noexcept {
+        if (idx < 0 || static_cast<std::size_t>(idx) >= edges.size())
+            return false;
+
+        const EdgeInfo& edge = edges[idx];
+        return edge.valid_vertices(points.size());
+    }
 };
 
 }

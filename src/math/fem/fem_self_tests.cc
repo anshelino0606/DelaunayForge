@@ -5,6 +5,7 @@
 #include "fem_error_analysis.h"
 #include "math/differential_equation.h"
 #include "math/differential_equation_solution.h"
+#include "math/math_.h"
 #include "math/types.h"
 
 #include <cmath>
@@ -169,17 +170,16 @@ RobinSlabTestResult run_robin_slab_self_test() {
 MMSConvergenceResult run_mms_convergence_study(double kappa) {
     MMSConvergenceResult res;
 
-    constexpr double pi = 3.14159265358979323846;
     const int levels[] = {4, 8, 16, 32, 64};
     constexpr int nLevels = 5;
 
     auto u_exact = [&](double x, double y) -> double {
-        return std::sin(pi * x) * std::sin(pi * y);
+        return std::sin(math::PI * x) * std::sin(math::PI * y);
     };
 
     auto grad_exact = [&](double x, double y, double& ux, double& uy) -> bool {
-        ux = pi * std::cos(pi * x) * std::sin(pi * y);
-        uy = pi * std::sin(pi * x) * std::cos(pi * y);
+        ux = math::PI * std::cos(math::PI * x) * std::sin(math::PI * y);
+        uy = math::PI * std::sin(math::PI * x) * std::cos(math::PI * y);
         return true;
     };
 
@@ -229,7 +229,7 @@ MMSConvergenceResult run_mms_convergence_study(double kappa) {
         prob.a = kappa;
         prob.c = 0.0;
         prob.f = [=](double x, double y) -> double {
-            return kappa * 2.0 * pi * pi * std::sin(pi * x) * std::sin(pi * y);
+            return kappa * 2.0 * math::PI * math::PI * std::sin(math::PI * x) * std::sin(math::PI * y);
         };
 
         DifferentialEquationSolution sol;

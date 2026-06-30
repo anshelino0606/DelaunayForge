@@ -9,6 +9,7 @@
 #include "math/differential_equation_solution.h"
 #include "fem_dense_linalg.h"
 #include "log_categories.h"
+#include "geom/geom2d/vec.h"
 
 #include <algorithm>
 #include <cmath>
@@ -128,13 +129,13 @@ static void assemble_local_dense_P1(
     }
 
     // Boundary integrals: Robin and Neumann
-    for (const auto& e : mesh.edges_bc) {
+    for (const FEMMesh::EdgeBC& e : mesh.edges_bc) {
         if (e.type == BCType::None || e.type == BCType::Dirichlet) continue;
         if (!is_valid(e.a, mesh.nodes.size()) || !is_valid(e.b, mesh.nodes.size())) continue;
 
-        const auto& A = mesh.nodes[to_size(e.a)];
-        const auto& B = mesh.nodes[to_size(e.b)];
-        const double L = std::hypot(B.x - A.x, B.y - A.y);
+        const FEMMesh::Node& A = mesh.nodes[to_size(e.a)];
+        const FEMMesh::Node& B = mesh.nodes[to_size(e.b)];
+        const double L = geom2d::vec::dist(B, A);
 
         if (e.type == BCType::Robin) {
             const double k = e.k;

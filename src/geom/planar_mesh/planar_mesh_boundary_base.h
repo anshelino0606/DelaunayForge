@@ -3,10 +3,10 @@
 
 #include "core/object/object.h"
 #include "core/object/property.h"
-#include "geom/delaunay_types.h"
-#include "geom/smooth_stroke_config.h"
-#include "geom/parametric_curve_config.h"
-#include "geom/fractal_domain_config.h"
+#include "geom/delaunay/delaunay_types.h"
+#include "geom/configs/smooth_stroke_config.h"
+#include "geom/configs/parametric_curve_config.h"
+#include "geom/configs/fractal_domain_config.h"
 
 namespace fem {
 

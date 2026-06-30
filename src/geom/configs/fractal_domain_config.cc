@@ -2,8 +2,6 @@
 
 namespace fem {
 
-const double pi = 3.14159265358979323846;
-
 FEM_DEFINE_ENUM(FractalPreset);
 FEM_DEFINE_STRUCT(FractalDomainConfig);
 

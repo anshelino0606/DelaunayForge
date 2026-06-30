@@ -5,9 +5,10 @@
 #include "geom/planar_mesh/planar_mesh_boundary_base.h"
 #include "geom/planar_mesh/planar_mesh_outer_boundary.h"
 #include "geom/planar_mesh/planar_mesh_inner_boundary.h"
-#include "geom/triangulation_session_events.h"
+#include "geom/triangulation/triangulation_session_events.h"
 #include "math/boundary_condition.h"
 #include "math/bc_group_manager.h"
+#include "math/differential_equation_solution.h"
 #include "math/pde/pde_component.h"
 #include "math/entities/planar_math_entity.h"
 #include "tools/bc_utils.h"
@@ -890,9 +891,9 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
         const Rgba8 boundary_col = dark ? Rgba8{140, 200, 140, 240} : Rgba8{30, 30, 30, 255};
         
         for (const EdgeInfo& e : R.edges) {
-            if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
-            const auto& A = R.points[e.a];
-            const auto& B = R.points[e.b];
+            if (!e.valid_vertices(R.points.size())) continue;
+            const Point2D& A = R.points[e.a];
+            const Point2D& B = R.points[e.b];
             const ImVec2 pA = to_px(A.x(), A.y());
             const ImVec2 pB = to_px(B.x(), B.y());
             const Rgba8 c = e.on_boundary ? boundary_col : edge_col;
@@ -908,11 +909,10 @@ bool CanvasWindow::export_svg(const std::string& absolute_path) const {
         for (BoundaryCondition* bc : last_mesh_->boundary_conditions()) {
             const Rgba8 color = bc_color(bc->type().value);
             for (int eid : bc->edge_ids()) {
-                if ((size_t)eid >= R.edges.size()) continue;
+                if (!R.valid_edge(eid)) continue;
                 const EdgeInfo& e = R.edges[eid];
-                if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
-                const auto& A = R.points[e.a];
-                const auto& B = R.points[e.b];
+                const Point2D& A = R.points[e.a];
+                const Point2D& B = R.points[e.b];
                 const ImVec2 pA = to_px(A.x(), A.y());
                 const ImVec2 pB = to_px(B.x(), B.y());
                 ss << "    <line x1=\"" << pA.x << "\" y1=\"" << pA.y << "\" x2=\"" << pB.x << "\" y2=\"" << pB.y
@@ -1139,15 +1139,30 @@ int CanvasWindow::pick_edge(const DelaunayTriangulationResult& R, const glm::dve
 
     double best = 1e300; int best_e = -1;
     for (size_t i=0;i<R.edges.size();++i) {
-        const auto& e = R.edges[i];
-        if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
-        const auto& P = R.points[e.a]; const auto& Q = R.points[e.b];
+        const EdgeInfo& e = R.edges[i];
+        if (!e.valid_vertices(R.points.size())) 
+            continue;
+
+        const Point2D& P = R.points[e.a]; 
+        const Point2D& Q = R.points[e.b];
+        
         double A=x-P.x(), B=y-P.y(), C=Q.x()-P.x(), D=Q.y()-P.y();
-        double len2 = C*C + D*D; if (len2 < 1e-12) continue;
-        double t = (A*C + B*D) / len2; t = std::clamp(t, 0.0, 1.0);
+
+        double len2 = C*C + D*D; 
+        if (len2 < 1e-12) 
+            continue;
+
+        double t = (A*C + B*D) / len2; 
+        t = std::clamp(t, 0.0, 1.0);
+        
         double px = P.x() + t*C, py = P.y() + t*D;
-        double dx = x - px, dy = y - py; double d2 = dx*dx + dy*dy;
-        if (d2 < best) { best = d2; best_e = (int)i; }
+        double dx = x - px, dy = y - py; 
+        double d2 = dx*dx + dy*dy;
+
+        if (d2 < best) { 
+            best = d2; 
+            best_e = (int)i; 
+        }
     }
     return (best <= max_d2) ? best_e : -1;
 }
@@ -1409,9 +1424,9 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
         const uint32_t boundary_col = dark ? rgba8(140, 200, 140, 240) : rgba8(30, 30, 30, 255);
         
         for (const EdgeInfo& e : R.edges) {
-            if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
-            const auto& A = R.points[e.a];
-            const auto& B = R.points[e.b];
+            if (!e.valid_vertices(R.points.size())) continue;
+            const Point2D& A = R.points[e.a];
+            const Point2D& B = R.points[e.b];
             const ImVec2 pA = to_px(A.x(), A.y());
             const ImVec2 pB = to_px(B.x(), B.y());
             const uint32_t c = e.on_boundary ? boundary_col : edge_col;
@@ -1427,9 +1442,9 @@ bool CanvasWindow::export_png(const std::string& absolute_path) const {
             for (int eid : bc->edge_ids()) {
                 if ((size_t)eid >= R.edges.size()) continue;
                 const EdgeInfo& e = R.edges[eid];
-                if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
-                const auto& A = R.points[e.a];
-                const auto& B = R.points[e.b];
+                if (!e.valid_vertices(R.points.size())) continue;
+                const Point2D& A = R.points[e.a];
+                const Point2D& B = R.points[e.b];
                 const ImVec2 pA = to_px(A.x(), A.y());
                 const ImVec2 pB = to_px(B.x(), B.y());
                 draw_line((int)pA.x, (int)pA.y, (int)pB.x, (int)pB.y, color, bc_thickness);
@@ -1629,10 +1644,10 @@ void CanvasWindow::draw_selection_overlay(const CanvasWindowDrawInfo& draw_info)
             if (eid < 0 || (size_t)eid >= R.edges.size()) continue;
             
             const EdgeInfo& e = R.edges[eid];
-            if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
+            if (!e.valid_vertices(R.points.size())) continue;
 
-            const auto& A = R.points[e.a];
-            const auto& B = R.points[e.b];
+            const Point2D& A = R.points[e.a];
+            const Point2D& B = R.points[e.b];
             ImVec2 pA = viewport_.to_screen({A.x(), A.y()});
             ImVec2 pB = viewport_.to_screen({B.x(), B.y()});
             
@@ -1648,10 +1663,10 @@ void CanvasWindow::draw_selection_overlay(const CanvasWindowDrawInfo& draw_info)
             if (eid < 0 || (size_t)eid >= R.edges.size()) continue;
             
             const EdgeInfo& e = R.edges[eid];
-            if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
+            if (!e.valid_vertices(R.points.size())) continue;
 
-            const auto& A = R.points[e.a];
-            const auto& B = R.points[e.b];
+            const Point2D& A = R.points[e.a];
+            const Point2D& B = R.points[e.b];
             ImVec2 pA = viewport_.to_screen({A.x(), A.y()});
             ImVec2 pB = viewport_.to_screen({B.x(), B.y()});
             
@@ -1668,10 +1683,10 @@ void CanvasWindow::draw_selection_overlay(const CanvasWindowDrawInfo& draw_info)
         if (eid < 0 || (size_t)eid >= R.edges.size()) continue;
         
         const EdgeInfo& e = R.edges[eid];
-        if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
+        if (!e.valid_vertices(R.points.size())) continue;
 
-        const auto& A = R.points[e.a];
-        const auto& B = R.points[e.b];
+        const Point2D& A = R.points[e.a];
+        const Point2D& B = R.points[e.b];
         ImVec2 pA = viewport_.to_screen({A.x(), A.y()});
         ImVec2 pB = viewport_.to_screen({B.x(), B.y()});
         
@@ -1712,7 +1727,7 @@ std::vector<int> CanvasWindow::pick_edges_in_rect(const DelaunayTriangulationRes
         const EdgeInfo& e = R.edges[i];
         if (!e.on_boundary) continue;  // Only select boundary edges
         
-        if ((size_t)e.a >= R.points.size() || (size_t)e.b >= R.points.size()) continue;
+        if (!e.valid_vertices(R.points.size())) continue;
 
         const auto& A = R.points[e.a];
         const auto& B = R.points[e.b];

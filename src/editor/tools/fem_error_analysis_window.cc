@@ -3,8 +3,9 @@
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
 #include "math/pde/pde_presets.h"
-#include "geom/delaunay_types.h"
-#include "geom/geometry_2d.h"
+#include "math/math_.h"
+#include "geom/delaunay/delaunay_types.h"
+#include "geom/geom2d/tri.h"
 
 #include <imgui/imgui.h>
 #include <cmath>
@@ -173,10 +174,10 @@ static bool try_build_rectangle_laplace_exact(const PlanarMeshComponent& mesh,
     RectangleLaplaceBenchmark rect;
     bool have_boundary_vertex = false;
     int boundary_edge_count = 0;
-    for (const auto& edge : R.edges) {
+    for (const EdgeInfo& edge : R.edges) {
         if (!edge.on_boundary) continue;
 
-        if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+        if (!edge.valid_vertices(R.points.size())) {
             if (reason) *reason = "Boundary edge references invalid vertices";
             return false;
         }
@@ -246,7 +247,7 @@ static bool try_build_rectangle_laplace_exact(const PlanarMeshComponent& mesh,
                 return false;
             }
             const auto& edge = R.edges[edge_id];
-            if ((unsigned)edge.a >= (unsigned)R.points.size() || (unsigned)edge.b >= (unsigned)R.points.size()) {
+            if (!edge.valid_vertices(R.points.size())) {
                 if (reason) *reason = "Boundary condition references invalid boundary vertices";
                 return false;
             }
@@ -398,30 +399,25 @@ bool FEMErrorAnalysisWindow::selection_point_(
     if (!sel.valid()) return false;
 
     if (sel.kind == CanvasInspector::Kind::Vertex) {
-        if (sel.id < 0 || (size_t)sel.id >= R.points.size()) return false;
+        if (!R.valid_point(sel.id)) return false;
         x = R.points[sel.id].x();
         y = R.points[sel.id].y();
         return true;
     }
 
     if (sel.kind == CanvasInspector::Kind::Edge) {
-        if (sel.id < 0 || (size_t)sel.id >= R.edges.size()) return false;
-        const auto& E = R.edges[sel.id];
-        if ((size_t)E.a >= R.points.size() || (size_t)E.b >= R.points.size()) return false;
+        if (!R.valid_edge(sel.id)) return false;
+        const EdgeInfo& E = R.edges[sel.id];
         x = 0.5 * (R.points[E.a].x() + R.points[E.b].x());
         y = 0.5 * (R.points[E.a].y() + R.points[E.b].y());
         return true;
     }
 
     if (sel.kind == CanvasInspector::Kind::Triangle) {
-        if (sel.id < 0 || (size_t)sel.id >= R.triangles.size()) return false;
-        const auto& T = R.triangles[sel.id];
-        if (!T.valid) return false;
-        if ((size_t)T.v[0] >= R.points.size() || 
-            (size_t)T.v[1] >= R.points.size() || 
-            (size_t)T.v[2] >= R.points.size()) return false;
+        if (!R.valid_triangle(sel.id)) return false;
+        const Tri& T = R.triangles[sel.id];
 
-        glm::dvec2 c = Geometry2D::tri_centroid(R.points[T.v[0]], R.points[T.v[1]], R.points[T.v[2]]);
+        glm::dvec2 c = geom2d::tri::centroid(R.points[T.v[0]], R.points[T.v[1]], R.points[T.v[2]]);
 
         x = c.x;
         y = c.y;
@@ -1300,10 +1296,10 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
 
                 for (const auto& L : levels) {
                     auto e = compute_error_vs_reference<double>(L.mesh, L.u, ref_mesh, ref_u, &ref_loc);
-                    l2.push_back(e.valid ? e.l2 : std::numeric_limits<double>::quiet_NaN());
+                    l2.push_back(e.valid ? e.l2 : math::DNAN);
                     h1_full.push_back((e.valid && e.has_grad)
                         ? std::sqrt(e.l2 * e.l2 + e.h1_semi * e.h1_semi)
-                        : std::numeric_limits<double>::quiet_NaN());
+                        : math::DNAN);
                 }
 
                 LOGT_INFO(LogMath, "Aitken stress: computed L2/W1,2 vs ref for %zu levels", levels.size());
@@ -1313,20 +1309,20 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
                     const double li = l2[i];
                     const double hi = h1_full[i];
 
-                    double rate_l2 = std::numeric_limits<double>::quiet_NaN();
+                    double rate_l2 = math::DNAN;
                     if (i > 0 && std::isfinite(l2[i - 1]) && std::isfinite(li) && l2[i - 1] > 0.0 && li > 0.0) {
                         const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
                         if (std::abs(log_h) > 1e-12) rate_l2 = std::log(l2[i - 1] / li) / log_h;
                     }
 
-                    double rate_h1 = std::numeric_limits<double>::quiet_NaN();
+                    double rate_h1 = math::DNAN;
                     if (i > 0 && std::isfinite(h1_full[i - 1]) && std::isfinite(hi) && h1_full[i - 1] > 0.0 && hi > 0.0) {
                         const double log_h = std::log(levels[i - 1].h / std::max(L.h, 1e-16));
                         if (std::abs(log_h) > 1e-12) rate_h1 = std::log(h1_full[i - 1] / hi) / log_h;
                     }
 
-                    double ap_l2 = std::numeric_limits<double>::quiet_NaN();
-                    double ae_l2 = std::numeric_limits<double>::quiet_NaN();
+                    double ap_l2 = math::DNAN;
+                    double ae_l2 = math::DNAN;
                     if (i >= 2 && std::isfinite(l2[i - 2]) && std::isfinite(l2[i - 1]) && std::isfinite(li)) {
                         auto est = aitken_estimate_3<double>(l2[i - 2], l2[i - 1], li, levels[i - 2].h, levels[i - 1].h, L.h);
                         if (est.valid) {
@@ -1335,8 +1331,8 @@ void FEMErrorAnalysisWindow::draw_section_aitken_stress_(const DrawInfo& info) {
                         }
                     }
 
-                    double ap_h1 = std::numeric_limits<double>::quiet_NaN();
-                    double ae_h1 = std::numeric_limits<double>::quiet_NaN();
+                    double ap_h1 = math::DNAN;
+                    double ae_h1 = math::DNAN;
                     if (i >= 2 && std::isfinite(h1_full[i - 2]) && std::isfinite(h1_full[i - 1]) && std::isfinite(hi)) {
                         auto est = aitken_estimate_3<double>(h1_full[i - 2], h1_full[i - 1], hi, levels[i - 2].h, levels[i - 1].h, L.h);
                         if (est.valid) {

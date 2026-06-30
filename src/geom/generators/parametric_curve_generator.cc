@@ -1,6 +1,6 @@
 #include "parametric_curve_generator.h"
 #include "math/expression_parser.h"
-#include "parametric_curve_config.h"
+#include "geom/configs/parametric_curve_config.h"
 #include "log_categories.h"
 
 namespace fem {
@@ -156,8 +156,8 @@ std::optional<std::string> ParametricCurveGenerator::generate_custom(
     vars["a"] = config.a;
     vars["b"] = config.b;
     vars["c"] = config.c;
-    vars["pi"] = 3.14159265358979323846;
-    vars["e"] = 2.71828182845904523536;
+    vars["pi"] = math::PI;
+    vars["e"] = math::E;
 
     for (int i = 0; i < config.sample_count; ++i) {
         double t = config.t_start + i * dt;

@@ -15,7 +15,7 @@
 #include "math/fem/field/fem_reference_provider.h"
 #include "math/fem/field/fem_convergence_study.h"
 #include "math/fractional_equation_config.h"
-#include "geom/delaunay_types.h"
+#include "geom/delaunay/delaunay_types.h"
 
 namespace fem {
 

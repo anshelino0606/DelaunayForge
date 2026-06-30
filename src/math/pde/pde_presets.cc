@@ -1,4 +1,5 @@
 #include "pde_presets.h"
+#include "math/math_.h"
 #include <cmath>
 
 namespace fem {
@@ -60,7 +61,7 @@ void PDEPreset_Poisson::for_each_parameter(const ForEachParameter& callback) con
     parameter_bundle().for_each(callback);
 }
 bool PDEPreset_Poisson::evaluate_exact_solution(double x, double y, double& u_exact, double* ux_exact, double* uy_exact) const {
-    const double pi = M_PI;
+    const double pi = math::PI;
     u_exact = std::sin(pi * x) * std::sin(pi * y);
     if (ux_exact) *ux_exact = pi * std::cos(pi * x) * std::sin(pi * y);
     if (uy_exact) *uy_exact = pi * std::sin(pi * x) * std::cos(pi * y);

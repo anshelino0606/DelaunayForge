@@ -1,6 +1,13 @@
 #include "delaunay2d.h"
 #include "log_categories.h"
-#include "geometry_2d.h"
+#include "geom/geom2d/tri.h"
+#include "geom/geom2d/vec.h"
+#include "geom/geom2d/loop.h"
+#include "geom/geom2d/types.h"
+#include "geom/geom2d/segment.h"
+#include "geom/geom2d/query.h"
+#include "geom/geom2d/predicate.h"
+#include "math/math_.h"
 #include <algorithm>
 #include <unordered_map>
 #include <fstream>
@@ -15,65 +22,9 @@ namespace fem {
 
 namespace {
 
-/// Compute signed area (straight or gay)
-[[nodiscard]] inline double orient_val(
-    const glm::dvec2& a, 
-    const glm::dvec2& b, 
-    const glm::dvec2& c) noexcept 
-{
-    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
 /// Check if two edges share an endpoint
 [[nodiscard]] inline bool share_endpoint(int a, int b, int c, int d) noexcept {
     return (a == c) || (a == d) || (b == c) || (b == d);
-}
-
-/// Test if two line segments properly intersect (not at endpoints)
-[[nodiscard]] bool segments_intersect(
-    const glm::dvec2& A, const glm::dvec2& B,
-    const glm::dvec2& C, const glm::dvec2& D,
-    double eps) noexcept
-{
-    const double o1 = orient_val(A, B, C);
-    const double o2 = orient_val(A, B, D);
-    const double o3 = orient_val(C, D, A);
-    const double o4 = orient_val(C, D, B);
-
-    auto sign = [eps](double v) -> int {
-        if (v > eps) return 1;
-        if (v < -eps) return -1;
-        return 0;
-    };
-
-    const int s1 = sign(o1), s2 = sign(o2);
-    const int s3 = sign(o3), s4 = sign(o4);
-    
-    return (s1 * s2 < 0) && (s3 * s4 < 0);
-}
-
-
-[[nodiscard]] bool pointInPoly(std::span<const Point2D> P,
-                               std::span<const int> idx,
-                               double x, double y) noexcept
-{
-    if (idx.size() < 3) return true;
-
-    bool inside = false;
-    std::size_t j = idx.size() - 1;
-
-    for (std::size_t i = 0; i < idx.size(); j = i++) {
-        const auto& a = P[static_cast<std::size_t>(idx[i])];
-        const auto& b = P[static_cast<std::size_t>(idx[j])];
-
-        const bool cond = (a.y() > y) != (b.y() > y);
-        if (!cond) continue;
-        const double denom = (b.y() - a.y()) + 1e-300;
-        const double x_on_edge = (b.x() - a.x()) * (y - a.y()) / denom + a.x();
-
-        if (x < x_on_edge) inside = !inside;
-    }
-    return inside;
 }
 
 static inline int opposite_vertex(const Tri& t, int a, int b) noexcept {
@@ -84,61 +35,7 @@ static inline int opposite_vertex(const Tri& t, int a, int b) noexcept {
     return -1;
 }
 
-static void seed_domain_points(std::vector<Point2D>& pts,
-                               const std::vector<std::vector<int>>& loop_idx,
-                               const std::vector<Point2D>& allPts,
-                               double h)
-{
-    if (loop_idx.empty() || loop_idx[0].size() < 3) return;
-
-    auto inside = [&](double x,double y){
-        if (!pointInPoly(allPts, loop_idx[0], x, y)) return false;
-        for (size_t h=1; h<loop_idx.size(); ++h)
-            if (pointInPoly(allPts, loop_idx[h], x, y)) return false;
-        return true;
-    };
-
-    // bbox of outer
-    double xmin=1e300,xmax=-1e300,ymin=1e300,ymax=-1e300;
-    for (int id : loop_idx[0]) {
-        xmin = std::min(xmin, allPts[id].x());
-        xmax = std::max(xmax, allPts[id].x());
-        ymin = std::min(ymin, allPts[id].y());
-        ymax = std::max(ymax, allPts[id].y());
-    }
-
-    const double step = std::max(1.0, 0.9*h);
-    for (double y=ymin+step; y<=ymax-step; y+=step)
-        for (double x=xmin+step; x<=xmax-step; x+=step)
-            if (inside(x,y)) pts.emplace_back(x, y, (int)pts.size());
-}
-
-static bool points_on_circle(const std::vector<Point2D>& pts, double eps = 1e-10) {
-    if (pts.size() < 4) return false;
-
-    glm::dvec2 A = pts[0].p, B = pts[1].p, C = pts[2].p;
-    double d = 2.0 * (A.x*(B.y - C.y) + B.x*(C.y - A.y) + C.x*(A.y - B.y));
-    if (std::abs(d) < eps) return false;
-    double ux = ((A.x*A.x + A.y*A.y)*(B.y - C.y) +
-                 (B.x*B.x + B.y*B.y)*(C.y - A.y) +
-                 (C.x*C.x + C.y*C.y)*(A.y - B.y)) / d;
-    double uy = ((A.x*A.x + A.y*A.y)*(C.x - B.x) +
-                 (B.x*B.x + B.y*B.y)*(A.x - C.x) +
-                 (C.x*C.x + C.y*C.y)*(B.x - A.x)) / d;
-    glm::dvec2 O(ux, uy);
-    double R = std::hypot(A.x - ux, A.y - uy);
-
-    for (const auto& p : pts) {
-        double r = std::hypot(p.x() - ux, p.y() - uy);
-        if (std::abs(r - R) > 1e-6 * R) return false;
-    }
-    return true;
-}
-
 static void build_edges_for_result(DelaunayTriangulationResult& R) {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
     struct AccEdge {
         int a = -1, b = -1;
         int tri_left  = -1;
@@ -148,14 +45,14 @@ static void build_edges_for_result(DelaunayTriangulationResult& R) {
     const std::size_t tri_n = R.triangles.size();
     R.tri2edge.assign(tri_n, {-1, -1, -1});
 
-    std::unordered_map<EdgeKey, int, U64Hash> edge_index;
+    std::unordered_map<PackedEdge, int, PackedEdgeHash> edge_index;
     edge_index.reserve(tri_n * 3);
 
     std::vector<AccEdge> acc;
     acc.reserve(tri_n * 3);
 
     auto add_edge = [&](int a, int b, int t) -> int {
-        const EdgeKey k = detail::pack_edge(a, b);
+        const PackedEdge k = pack_edge(a, b);
         auto [it, inserted] = edge_index.emplace(k, static_cast<int>(acc.size()));
         if (inserted) {
             AccEdge e;
@@ -201,25 +98,6 @@ static void build_edges_for_result(DelaunayTriangulationResult& R) {
     //     if ((std::size_t)e.a < R.points.size()) R.points[e.a].on_boundary = true;
     //     if ((std::size_t)e.b < R.points.size()) R.points[e.b].on_boundary = true;
     // }
-}
-
-static inline bool point_on_segment_eps(const glm::dvec2& P,
-                                        const glm::dvec2& A,
-                                        const glm::dvec2& B,
-                                        double eps)
-{
-    const double cross = orient_val(A, B, P);
-    if (std::abs(cross) > eps) return false;
-
-    const glm::dvec2 AP = P - A;
-    const glm::dvec2 AB = B - A;
-    const double dot = AP.x*AB.x + AP.y*AB.y;
-    if (dot < -eps) return false;
-
-    const double ab2 = AB.x*AB.x + AB.y*AB.y;
-    if (dot > ab2 + eps) return false;
-
-    return true;
 }
 
 static void remove_dangling_vertices(DelaunayTriangulationResult& R) {
@@ -287,7 +165,7 @@ static void remove_dangling_vertices(DelaunayTriangulationResult& R) {
 DelaunayTriangulator::DelaunayTriangulator(const DelaunayTriangulationConfig& cfg) : config(cfg) {}
 
 DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<Point2D>& input_points) {    
-    if (points_on_circle(input_points)) {
+    if (geom2d::query::points_on_circle(input_points)) {
         LOGT_INFO(LogGeometry, "Detected concyclic point set — using circle-optimized triangulation.");
         return triangulate_circle(input_points);
     }
@@ -317,8 +195,7 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
         if (!t.valid) continue;
 
         for (int j = 0; j < 3; ++j) {
-            const int v = t.v[j];
-            if (v < 0 || static_cast<std::size_t>(v) >= points.size()) {
+            if (!t.valid_vertex(j, points.size())) {
                 t.valid = false;
                 break;
             }
@@ -368,24 +245,16 @@ DelaunayTriangulationResult DelaunayTriangulator::triangulate(const std::vector<
 
 void DelaunayTriangulator::add_super_triangle() {
     // Find bounding box
-    double xmin = std::numeric_limits<double>::max();
-    double xmax = std::numeric_limits<double>::lowest();
-    double ymin = std::numeric_limits<double>::max();
-    double ymax = std::numeric_limits<double>::lowest();
+    geom2d::BoundingBox bbox;
     
-    for (const auto& p : points) {
-        xmin = std::min(xmin, p.x());
-        xmax = std::max(xmax, p.x());
-        ymin = std::min(ymin, p.y());
-        ymax = std::max(ymax, p.y());
+    for (const Point2D& p : points) {
+        bbox.update(p);
     }
     
-    double dx = xmax - xmin;
-    double dy = ymax - ymin;
-    double dmax = std::max(dx, dy) * 10.0;
+    double dmax = bbox.dmax() * 10.0;
     
-    double cx = (xmin + xmax) * 0.5;
-    double cy = (ymin + ymax) * 0.5;
+    double cx = bbox.cx();
+    double cy = bbox.cy();
     
     points.emplace_back(cx, cy + 2*dmax, static_cast<int>(points.size()));
     points.emplace_back(cx - 1.732*dmax, cy - dmax, static_cast<int>(points.size()));  
@@ -431,13 +300,13 @@ std::vector<int> DelaunayTriangulator::find_bad_triangles(const Point2D& point) 
         glm::dvec2 c = points[tri.v[2]].p;
         
         // Ensure CCW orientation
-        if (orient_sign(a, b, c) < 0) {
+        if (geom2d::pred::orient_sign(a, b, c) < 0) {
             std::swap(triangles[i].v[1], triangles[i].v[2]);
             b = points[triangles[i].v[1]].p;
             c = points[triangles[i].v[2]].p;
         }
         
-        if (inCircle_ccw(a, b, c, p, config.epsilon) > 0) {
+        if (geom2d::pred::incircle_ccw(a, b, c, p, config.epsilon) > 0) {
             bad.push_back(static_cast<int>(i));
         }
     }
@@ -446,17 +315,14 @@ std::vector<int> DelaunayTriangulator::find_bad_triangles(const Point2D& point) 
 }
 
 std::vector<Edge> DelaunayTriangulator::extract_cavity_boundary(const std::vector<int>& bad_triangles) {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
-    std::unordered_map<EdgeKey, int, U64Hash> edge_count;
+    std::unordered_map<PackedEdge, int, PackedEdgeHash> edge_count;
     edge_count.reserve(bad_triangles.size() * 3);
 
     for (int tri_idx : bad_triangles) {
         const Tri& tri = triangles[tri_idx];
-        edge_count[detail::pack_edge(tri.v[0], tri.v[1])] += 1;
-        edge_count[detail::pack_edge(tri.v[1], tri.v[2])] += 1;
-        edge_count[detail::pack_edge(tri.v[2], tri.v[0])] += 1;
+        edge_count[pack_edge(tri.v[0], tri.v[1])] += 1;
+        edge_count[pack_edge(tri.v[1], tri.v[2])] += 1;
+        edge_count[pack_edge(tri.v[2], tri.v[0])] += 1;
     }
 
     std::vector<Edge> boundary;
@@ -486,7 +352,7 @@ void DelaunayTriangulator::retriangulate_cavity(int point_idx, const std::vector
         glm::dvec2 b = points[new_tri.v[1]].p;
         glm::dvec2 c = points[new_tri.v[2]].p;
 
-        if (orient_sign(a, b, c) < 0) {
+        if (geom2d::pred::orient_sign(a, b, c) < 0) {
             std::swap(new_tri.v[0], new_tri.v[1]);
         }
     }
@@ -531,7 +397,7 @@ void DelaunayTriangulator::build_adjacency() {
         
         bool valid = true;
         for (int j = 0; j < 3; ++j) {
-            if (t.v[j] < 0 || static_cast<size_t>(t.v[j]) >= points.size()) {
+            if (!t.valid_vertex(j, points.size())) {
                 LOGT_ERROR(LogGeometry,
                     "Triangle %zu references invalid vertex %d (point count: %zu)",
                     i,
@@ -569,7 +435,7 @@ void DelaunayTriangulator::build_adjacency() {
             return -1;
         }
         
-        detail::EdgeKey k = detail::pack_edge(a, b);
+        PackedEdge k = pack_edge(a, b);
 
         auto it = edge_index_cache_.find(k);
         if (it != edge_index_cache_.end()) return it->second;
@@ -634,9 +500,6 @@ void DelaunayTriangulator::build_adjacency() {
 
 
 void fem::DelaunayTriangulator::update_triangle_neighbors() {
-    using detail::EdgeKey;
-    using detail::U64Hash;
-
     struct Pair {
         int a = -1;
         int b = -1;
@@ -644,7 +507,7 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         [[nodiscard]] int other(int t) const noexcept { return (a == t) ? b : (b == t ? a : -1); }
     };
 
-    std::unordered_map<EdgeKey, Pair, U64Hash> edge2pair;
+    std::unordered_map<PackedEdge, Pair, PackedEdgeHash> edge2pair;
     edge2pair.reserve(triangles.size() * 3);
 
     for (std::size_t i = 0; i < triangles.size(); ++i) {
@@ -652,9 +515,9 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         const auto& tri = triangles[i];
         const int t = static_cast<int>(i);
 
-        edge2pair[detail::pack_edge(tri.v[0], tri.v[1])].add(t);
-        edge2pair[detail::pack_edge(tri.v[1], tri.v[2])].add(t);
-        edge2pair[detail::pack_edge(tri.v[2], tri.v[0])].add(t);
+        edge2pair[pack_edge(tri.v[0], tri.v[1])].add(t);
+        edge2pair[pack_edge(tri.v[1], tri.v[2])].add(t);
+        edge2pair[pack_edge(tri.v[2], tri.v[0])].add(t);
     }
 
     for (std::size_t i = 0; i < triangles.size(); ++i) {
@@ -662,9 +525,9 @@ void fem::DelaunayTriangulator::update_triangle_neighbors() {
         auto& tri = triangles[i];
         const int t = static_cast<int>(i);
 
-        tri.neighbors[0] = edge2pair[detail::pack_edge(tri.v[0], tri.v[1])].other(t);
-        tri.neighbors[1] = edge2pair[detail::pack_edge(tri.v[1], tri.v[2])].other(t);
-        tri.neighbors[2] = edge2pair[detail::pack_edge(tri.v[2], tri.v[0])].other(t);
+        tri.neighbors[0] = edge2pair[pack_edge(tri.v[0], tri.v[1])].other(t);
+        tri.neighbors[1] = edge2pair[pack_edge(tri.v[1], tri.v[2])].other(t);
+        tri.neighbors[2] = edge2pair[pack_edge(tri.v[2], tri.v[0])].other(t);
     }
 }
 
@@ -748,7 +611,7 @@ void DelaunayTriangulator::rebuild_active_loop_bboxes_(std::span<const Point2D> 
 
         for (int vid : L) {
             if (vid < 0 || static_cast<std::size_t>(vid) >= pts.size()) continue;
-            const auto& p = pts[static_cast<std::size_t>(vid)];
+            const Point2D& p = pts[static_cast<std::size_t>(vid)];
             const double x = p.x();
             const double y = p.y();
             bb.xmin = std::min(bb.xmin, x);
@@ -764,20 +627,20 @@ bool DelaunayTriangulator::is_inside_active_domain(double x, double y) const {
     if (!active_boundary_loops_.empty()) {
         if (active_boundary_loops_[0].size() < 3) return true;
         if (!active_loop_bboxes_.empty() && active_loop_bboxes_[0].contains(x, y) == false) return false;
-        if (!pointInPoly(points, active_boundary_loops_[0], x, y)) return false;
+        if (!geom2d::loop::point_inside(points, active_boundary_loops_[0], {x, y})) return false;
         for (size_t h = 1; h < active_boundary_loops_.size(); ++h) {
             if (active_boundary_loops_[h].size() < 3) continue;
             if (!active_loop_bboxes_.empty() && h < active_loop_bboxes_.size()) {
                 if (!active_loop_bboxes_[h].contains(x, y)) continue;
             }
-            if (pointInPoly(points, active_boundary_loops_[h], x, y)) return false;
+            if (geom2d::loop::point_inside(points, active_boundary_loops_[h], {x, y})) return false;
         }
         return true;
     }
 
     if (!active_boundary_loop_.empty()) {
         if (active_boundary_loop_.size() < 3) return true;
-        return pointInPoly(points, active_boundary_loop_, x, y);
+        return geom2d::loop::point_inside(points, active_boundary_loop_, {x, y});
     }
 
     return true;
@@ -805,7 +668,7 @@ void DelaunayTriangulator::lloyd_smoothing() {
                 glm::dvec2 C = points[tri.v[2]].p;
                 
                 // Get circumcenter of this triangle
-                glm::dvec2 circumcenter_pos = circumcenter(A, B, C);
+                glm::dvec2 circumcenter_pos = geom2d::tri::circumcenter(A, B, C);
                 voronoi_vertices.push_back(circumcenter_pos);
             }
             
@@ -867,7 +730,6 @@ void DelaunayTriangulator::edge_flipping_pass() {
 }
 
 void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
-    const double min_rad = min_deg * M_PI / 180.0;
     int added = 0;
 
     for (;;) {
@@ -880,10 +742,10 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
 
             // Don’t refine triangles that will be clipped out (outside outer / inside holes).
             if (!active_boundary_loops_.empty() || !active_boundary_loop_.empty()) {
-                const auto& A = points[t.v[0]];
-                const auto& B = points[t.v[1]];
-                const auto& C = points[t.v[2]];
-                glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+                const Point2D& A = points[t.v[0]];
+                const Point2D& B = points[t.v[1]];
+                const Point2D& C = points[t.v[2]];
+                glm::dvec2 c = geom2d::tri::centroid(A, B, C);
                 if (!is_inside_active_domain(c.x, c.y)) continue;
             }
 
@@ -899,7 +761,7 @@ void DelaunayTriangulator::refine_min_angle(double min_deg, int max_steiner) {
         glm::dvec2 A = points[w.v[0]].p;
         glm::dvec2 B = points[w.v[1]].p;
         glm::dvec2 C = points[w.v[2]].p;
-        glm::dvec2 cc = circumcenter(A,B,C);
+        glm::dvec2 cc = geom2d::tri::circumcenter(A,B,C);
 
         Point2D p(cc.x, cc.y, (int)points.size());
         p.on_boundary = false; // Steiner interior point
@@ -1005,7 +867,7 @@ double DelaunayTriangulator::compute_triangle_angle(const Tri& tri, int vertex_i
     double cos_angle = dot / (mag_ab * mag_ac);
     cos_angle = std::max(-1.0, std::min(1.0, cos_angle)); // Clamp to valid range
     
-    return std::acos(cos_angle) * 180.0 / M_PI; // Convert to degrees
+    return glm::degrees(cos_angle);
 }
 
 void DelaunayTriangulator::compute_statistics(DelaunayTriangulationResult& result) const {
@@ -1051,7 +913,7 @@ bool DelaunayTriangulator::validate_triangulation(const DelaunayTriangulationRes
         glm::dvec2 c = result.points[tri.v[2]].p;
         
         // Ensure CCW
-        if (orient_sign(a, b, c) <= 0) return false;
+        if (geom2d::pred::orient_sign(a, b, c) <= 0) return false;
         
         // Check no other point lies inside circumcircle
         for (size_t i = 0; i < result.points.size(); ++i) {
@@ -1060,7 +922,7 @@ bool DelaunayTriangulator::validate_triangulation(const DelaunayTriangulationRes
                 static_cast<int>(i) == tri.v[2]) continue;
             
             glm::dvec2 d = result.points[i].p;
-            if (inCircle_ccw(a, b, c, d, eps) > 0) return false;
+            if (geom2d::pred::incircle_ccw(a, b, c, d, eps) > 0) return false;
         }
     }
     
@@ -1117,14 +979,11 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
 {
     // 1) merge boundary points into the working set (dedupe by coords)
     std::vector<Point2D> pts = input_points;
-    double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
-    for (const auto& p : boundary_poly_ccw) {
-        xmin = std::min(xmin, p.x());
-        xmax = std::max(xmax, p.x());
-        ymin = std::min(ymin, p.y());
-        ymax = std::max(ymax, p.y());
+    geom2d::BoundingBox bbox;
+    for (const Point2D& p : boundary_poly_ccw) {
+        bbox.update(p);
     }
-    const double diag = std::hypot(xmax - xmin, ymax - ymin);
+    const double diag = bbox.dist();
     const double dedupe_tol = std::max(1e-6, diag * 4e-9);
     auto find_or_add = [&](const Point2D& q) {
         for (size_t i = 0; i < pts.size(); ++i) {
@@ -1153,7 +1012,7 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
 
     DelaunayTriangulationResult R = triangulate(pts);
 
-    if (points_on_circle(pts)) {
+    if (geom2d::query::points_on_circle(pts)) {
         LOGT_INFO(LogGeometry, "Skipping constraint recovery for concyclic case.");
         return R;
     }
@@ -1189,7 +1048,7 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
 
     // 3) mark boundary nodes + make boundary edge list for the result
     for (int id : poly_idx)
-        if (id >= 0 && id < (int)R.points.size()) R.points[id].on_boundary = true;
+        if (R.valid_point(id)) R.points[id].on_boundary = true;
 
     R.boundary_edges.clear();
     if (poly_idx.size() >= 2) {
@@ -1204,12 +1063,12 @@ DelaunayTriangulator::triangulate_with_boundary(const std::vector<Point2D>& inpu
     if (poly_idx.size() >= 3) {
         std::vector<Tri> kept;
         kept.reserve(R.triangles.size());
-        for (const auto& t : R.triangles) {
-            const auto& A = R.points[t.v[0]];
-            const auto& B = R.points[t.v[1]];
-            const auto& C = R.points[t.v[2]];
-            glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
-            if (pointInPoly(R.points, poly_idx, c.x, c.y))
+        for (const Tri& t : R.triangles) {
+            const Point2D& A = R.points[t.v[0]];
+            const Point2D& B = R.points[t.v[1]];
+            const Point2D& C = R.points[t.v[2]];
+            glm::dvec2 c = geom2d::tri::centroid(A, B, C);
+            if (geom2d::loop::point_inside(R.points, poly_idx, {c.x, c.y}))
                 kept.push_back(t);
         }
         R.triangles.swap(kept);
@@ -1259,9 +1118,9 @@ void DelaunayTriangulator::refine_to_density() {
         glm::dvec2 mid(0.0);
         bool best_is_boundary_segment = false;
 
-        for (const auto& e : edges_cache_) {
+        for (const EdgeInfo& e : edges_cache_) {
             if (e.a < 0 || e.b < 0) continue;
-            if ((size_t)e.a >= points.size() || (size_t)e.b >= points.size()) continue;
+            if (!e.valid_vertices(points.size())) continue;
 
             // Critical: never split constrained edges by inserting a point on them.
             // Doing so makes the original constraint (a,b) impossible to recover.
@@ -1270,7 +1129,7 @@ void DelaunayTriangulator::refine_to_density() {
             const auto& A = points[e.a];
             const auto& B = points[e.b];
 
-            double L = std::hypot(B.x() - A.x(), B.y() - A.y());
+            double L = geom2d::vec::dist(A, B);
             double mx = 0.5 * (A.x() + B.x()), my = 0.5 * (A.y() + B.y());
 
             // For porous domains, ignore edges that lie outside the domain or inside holes.
@@ -1343,16 +1202,13 @@ DelaunayTriangulator::triangulate_with_boundaries(
 
     std::vector<Point2D> pts = input_points;
 
-    double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
+    geom2d::BoundingBox bbox;
     for (const auto& loop : loops_ccw_outer_cw_holes) {
         for (const auto& p : loop) {
-            xmin = std::min(xmin, p.x());
-            xmax = std::max(xmax, p.x());
-            ymin = std::min(ymin, p.y());
-            ymax = std::max(ymax, p.y());
+            bbox.update(p);
         }
     }
-    const double diag = std::hypot(xmax - xmin, ymax - ymin);
+    const double diag = bbox.dist();
     const double weld_eps = std::max(1e-6, diag * 1e-8);
     const double snap_step = weld_eps;
     boundary_weld_eps_ = weld_eps;
@@ -1387,8 +1243,8 @@ DelaunayTriangulator::triangulate_with_boundaries(
             double a = 0.0;
             if (poly.size() < 2) return 0.0;
             for (size_t i = 0; i < poly.size(); ++i) {
-                const auto& p = poly[i];
-                const auto& q = poly[(i + 1) % poly.size()];
+                const Point2D& p = poly[i];
+                const Point2D& q = poly[(i + 1) % poly.size()];
                 a += p.x() * q.y() - p.y() * q.x();
             }
             return 0.5 * a;
@@ -1410,13 +1266,12 @@ DelaunayTriangulator::triangulate_with_boundaries(
     }
 
     {
-        double shortest_hole_edge = 1e300;
+        double shortest_hole_edge = math::DMAX;
         for (std::size_t li = 1; li < loop_idx.size(); ++li) {
-            const auto& L = loop_idx[li];
+            const std::vector<int>& L = loop_idx[li];
             for (std::size_t ei = 0; ei < L.size(); ++ei) {
                 const int ai = L[ei], bi = L[(ei + 1) % L.size()];
-                const double len = std::hypot(pts[bi].x() - pts[ai].x(),
-                                              pts[bi].y() - pts[ai].y());
+                const double len = geom2d::vec::dist(pts[bi], pts[ai]);
                 if (len > 1e-12) shortest_hole_edge = std::min(shortest_hole_edge, len);
             }
         }
@@ -1447,8 +1302,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
                     const int a = L[i];
                     const int b = L[j];
                     if (!detail::valid_index(a, pts.size()) || !detail::valid_index(b, pts.size())) continue;
-                    const double len = std::hypot(pts[(std::size_t)b].x() - pts[(std::size_t)a].x(),
-                                                  pts[(std::size_t)b].y() - pts[(std::size_t)a].y());
+                    const double len = geom2d::vec::dist(pts[(std::size_t)b], pts[(std::size_t)a]);
                     if (len < min_len) {
                         L.erase(L.begin() + (std::ptrdiff_t)j);
                         changed = true;
@@ -1515,6 +1369,11 @@ DelaunayTriangulator::triangulate_with_boundaries(
     // Rebuild from constrained state
     {
         DelaunayTriangulationResult constrained;
+        constrained.min_angle = R.min_angle;
+        constrained.median_angle = R.median_angle;
+        constrained.avg_angle = R.avg_angle;
+        constrained.triangle_count = R.triangle_count;
+        constrained.point_count = R.points.size();
         constrained.points = points;
         constrained.triangles.reserve(triangles.size());
         for (const auto& t : triangles) if (t.valid) constrained.triangles.push_back(t);
@@ -1540,7 +1399,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
     // mark boundary points in result
     for (const auto& L : loop_idx) {
         for (int id : L) {
-            if (id >= 0 && id < (int)R.points.size()) {
+            if (R.valid_point(id)) {
                 R.points[id].on_boundary = true;
             }
         }
@@ -1563,8 +1422,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
         struct HoleSeg { glm::dvec2 a, b; };
         struct HoleInfo {
             std::vector<HoleSeg> segs;
-            double xmin =  1e300, xmax = -1e300;
-            double ymin =  1e300, ymax = -1e300;
+            geom2d::BoundingBox bbox;
         };
         std::vector<HoleInfo> holes_info;
         holes_info.reserve(loop_idx.size());
@@ -1574,20 +1432,18 @@ DelaunayTriangulator::triangulate_with_boundaries(
             HoleInfo hi;
             for (std::size_t ei = 0; ei < L.size(); ++ei) {
                 const int ai = L[ei], bi = L[(ei + 1) % L.size()];
-                const auto& pa = R.points[ai];
-                const auto& pb = R.points[bi];
+                const Point2D& pa = R.points[ai];
+                const Point2D& pb = R.points[bi];
                 hi.segs.push_back({pa.p, pb.p});
-                hi.xmin = std::min({hi.xmin, pa.x(), pb.x()});
-                hi.xmax = std::max({hi.xmax, pa.x(), pb.x()});
-                hi.ymin = std::min({hi.ymin, pa.y(), pb.y()});
-                hi.ymax = std::max({hi.ymax, pa.y(), pb.y()});
+                hi.bbox.update(pa);
+                hi.bbox.update(pb);
             }
             holes_info.push_back(std::move(hi));
         }
 
         auto inside_outer = [&](double x, double y) {
             if (!this->active_loop_bboxes_.empty() && !this->active_loop_bboxes_[0].contains(x, y)) return false;
-            return pointInPoly(R.points, loop_idx[0], x, y);
+            return geom2d::loop::point_inside(R.points, loop_idx[0], {x, y});
         };
 
         const double clip_eps = std::max(config.epsilon, boundary_intersect_eps_);
@@ -1596,11 +1452,11 @@ DelaunayTriangulator::triangulate_with_boundaries(
             const double exmax = std::max(P.x, Q.x);
             const double eymin = std::min(P.y, Q.y);
             const double eymax = std::max(P.y, Q.y);
-            for (const auto& hi : holes_info) {
-                if (exmax < hi.xmin || exmin > hi.xmax) continue;
-                if (eymax < hi.ymin || eymin > hi.ymax) continue;
-                for (const auto& s : hi.segs) {
-                    if (segments_intersect(P, Q, s.a, s.b, clip_eps))
+            for (const HoleInfo& hi : holes_info) {
+                if (exmax < hi.bbox.mins.x || exmin > hi.bbox.maxs.x) continue;
+                if (eymax < hi.bbox.mins.y || eymin > hi.bbox.maxs.y) continue;
+                for (const HoleSeg& s : hi.segs) {
+                    if (geom2d::segment::intersect(P, Q, s.a, s.b, clip_eps))
                         return true;
                 }
             }
@@ -1609,24 +1465,26 @@ DelaunayTriangulator::triangulate_with_boundaries(
 
         std::vector<Tri> kept;
         kept.reserve(R.triangles.size());
-        for (const auto& t : R.triangles) {
-            const auto& A = R.points[t.v[0]];
-            const auto& B = R.points[t.v[1]];
-            const auto& C = R.points[t.v[2]];
+        for (const Tri& t : R.triangles) {
+            const Point2D& A = R.points[t.v[0]];
+            const Point2D& B = R.points[t.v[1]];
+            const Point2D& C = R.points[t.v[2]];
 
-            const glm::dvec2 c = Geometry2D::tri_centroid(A, B, C);
+            const glm::dvec2 c = geom2d::tri::centroid(A, B, C);
             if (!inside_outer(c.x, c.y)) continue;
 
             bool in_hole = false;
             for (std::size_t hi = 0; hi < holes_info.size(); ++hi) {
-                const auto& hole = holes_info[hi];
+                const HoleInfo& hole = holes_info[hi];
                 if (!hole.segs.empty()) {
-                    if (c.x < hole.xmin || c.x > hole.xmax) continue;
-                    if (c.y < hole.ymin || c.y > hole.ymax) continue;
+                    if (!hole.bbox.contains(c)) continue;
                 }
                 const std::size_t loop_h = hi + 1;
                 if (loop_h < loop_idx.size() && loop_idx[loop_h].size() >= 3) {
-                    if (pointInPoly(R.points, loop_idx[loop_h], c.x, c.y)) { in_hole = true; break; }
+                    if (geom2d::loop::point_inside(R.points, loop_idx[loop_h], c)) { 
+                        in_hole = true; 
+                        break; 
+                    }
                 }
             }
             if (in_hole) continue;
@@ -1650,7 +1508,7 @@ DelaunayTriangulator::triangulate_with_boundaries(
 }
 
 bool DelaunayTriangulator::edge_exists(int a, int b) const {
-    const auto k = detail::pack_edge(a, b);
+    const auto k = pack_edge(a, b);
     return edge_index_cache_.find(k) != edge_index_cache_.end();
 }
 
@@ -1658,16 +1516,16 @@ Edge DelaunayTriangulator::find_first_intersecting_edge(int a, int b) const {
     const glm::dvec2 A = points[a].p;
     const glm::dvec2 B = points[b].p;
 
-    for (const auto& e : edges_cache_) {
+    for (const EdgeInfo& e : edges_cache_) {
+        if (!e.valid_vertices(points.size())) continue;
         const int u = e.a, v = e.b;
         if (u < 0 || v < 0) continue;
-        if (u >= (int)points.size() || v >= (int)points.size()) continue;
         if (share_endpoint(a, b, u, v)) continue;
 
         const glm::dvec2 C = points[u].p;
         const glm::dvec2 D = points[v].p;
 
-        if (segments_intersect(A, B, C, D, config.epsilon)) {
+        if (geom2d::segment::intersect(A, B, C, D, config.epsilon)) {
             return Edge(u, v);
         }
     }
@@ -1676,7 +1534,7 @@ Edge DelaunayTriangulator::find_first_intersecting_edge(int a, int b) const {
 
 
 bool DelaunayTriangulator::flip_edge_if_possible(int ea, int eb) {
-    const auto k = detail::pack_edge(ea, eb);
+    const auto k = pack_edge(ea, eb);
     auto it = edge_index_cache_.find(k);
     if (it == edge_index_cache_.end()) return false;
 
@@ -1701,7 +1559,7 @@ bool DelaunayTriangulator::flip_edge_if_possible(int ea, int eb) {
         glm::dvec2 A = points[t.v[0]].p;
         glm::dvec2 B = points[t.v[1]].p;
         glm::dvec2 C = points[t.v[2]].p;
-        if (orient_sign(A, B, C) < 0) std::swap(t.v[1], t.v[2]);
+        if (geom2d::pred::orient_sign(A, B, C) < 0) std::swap(t.v[1], t.v[2]);
     };
     fix_ccw(t1);
     fix_ccw(t2);
@@ -1814,16 +1672,16 @@ bool DelaunayTriangulator::recover_constraint(int a, int b) {
         const glm::dvec2 B = points[b].p;
 
         bool flipped = false;
-        for (const auto& e : edges_cache_) {
+        for (const EdgeInfo& e : edges_cache_) {
+            if (!e.valid_vertices(points.size())) continue;
+            
             const int u = e.a;
             const int v = e.b;
-            if (u < 0 || v < 0) continue;
-            if (u >= (int)points.size() || v >= (int)points.size()) continue;
             if (share_endpoint(a, b, u, v)) continue;
 
             const glm::dvec2 C = points[u].p;
             const glm::dvec2 D = points[v].p;
-            if (!segments_intersect(A, B, C, D, seg_eps)) continue;
+            if (!geom2d::segment::intersect(A, B, C, D, seg_eps)) continue;
 
             if (is_constrained(u, v)) continue;
             if (e.tri_left < 0 || e.tri_right < 0) continue; // boundary/unflippable
@@ -1869,10 +1727,10 @@ void DelaunayTriangulator::constrained_delaunay_flip_pass() {
             glm::dvec2 D = points[d].p;
 
             // Ensure (A,B,C) is CCW for incircle test
-            if (orient_sign(A, B, C) < 0) std::swap(B, C);
+            if (geom2d::pred::orient_sign(A, B, C) < 0) std::swap(B, C);
 
             // If D is inside circumcircle of triangle ABC, edge (a,b) is illegal => flip
-            if (inCircle_ccw_scaled_strict(A, B, C, D) > 0) {
+            if (geom2d::pred::incircle_ccw_scaled_strict(A, B, C, D) > 0) {
                 if (!flip_edge(ei.tri_left, ei.tri_right, Edge(a, b))) continue;
 
                 // fix orientation
@@ -1883,7 +1741,7 @@ void DelaunayTriangulator::constrained_delaunay_flip_pass() {
                     glm::dvec2 p0 = points[t.v[0]].p;
                     glm::dvec2 p1 = points[t.v[1]].p;
                     glm::dvec2 p2 = points[t.v[2]].p;
-                    if (orient_sign(p0, p1, p2) < 0) std::swap(t.v[1], t.v[2]);
+                    if (geom2d::pred::orient_sign(p0, p1, p2) < 0) std::swap(t.v[1], t.v[2]);
                 };
                 fix_ccw(nL);
                 fix_ccw(nR);
@@ -1912,8 +1770,7 @@ void DelaunayTriangulator::build_constraints_from_loops(const std::vector<std::v
             const int b = L[(i + 1) % L.size()];
             if (a == b) continue;
             if (!detail::valid_index(a, points.size()) || !detail::valid_index(b, points.size())) continue;
-            const double len = std::hypot(points[(std::size_t)b].x() - points[(std::size_t)a].x(),
-                                          points[(std::size_t)b].y() - points[(std::size_t)a].y());
+            const double len = geom2d::vec::dist(points[(std::size_t)b], points[(std::size_t)a]);
             if (len < min_len) continue;
             add_constraint(a, b);
         }
@@ -1929,22 +1786,19 @@ void DelaunayTriangulator::enforce_constraints() {
 
     // Track constraint pairs that have already failed-and-been-skipped so we
     // never infinitely restart on the same unsplittable edge.
-    std::unordered_set<detail::EdgeKey, detail::U64Hash> permanently_failed;
+    std::unordered_set<PackedEdge, PackedEdgeHash> permanently_failed;
 
     // Compute a scale-aware boundary epsilon from the current boundary points.
     {
-        double xmin = 1e300, xmax = -1e300, ymin = 1e300, ymax = -1e300;
+        geom2d::BoundingBox bbox;
         bool any = false;
-        for (const auto& p : points) {
+        for (const Point2D& p : points) {
             if (!p.on_boundary) continue;
             any = true;
-            xmin = std::min(xmin, p.x());
-            xmax = std::max(xmax, p.x());
-            ymin = std::min(ymin, p.y());
-            ymax = std::max(ymax, p.y());
+            bbox.update(p);
         }
         if (any) {
-            const double diag = std::hypot(xmax - xmin, ymax - ymin);
+            const double diag = bbox.dist();
             boundary_weld_eps_ = std::max(1e-6, diag * 1e-8);
             boundary_intersect_eps_ = std::max(config.epsilon, boundary_weld_eps_ * 0.5);
         }
@@ -1973,14 +1827,14 @@ void DelaunayTriangulator::enforce_constraints() {
         }
 
         // Skip constraints already known to be unrecoverable.
-        if (permanently_failed.count(detail::pack_edge(a, b))) { ++i; continue; }
+        if (permanently_failed.count(pack_edge(a, b))) { ++i; continue; }
 
         if (!recover_constraint(a, b)) {
             // Degenerate constraint: collapse it in the owning loop.
             if (detail::valid_index(a, points.size()) && detail::valid_index(b, points.size())) {
                 const glm::dvec2 A = points[a].p;
                 const glm::dvec2 B = points[b].p;
-                const double seg_len = std::hypot(B.x - A.x, B.y - A.y);
+                const double seg_len = geom2d::vec::dist(A, B);
                 if (seg_len < degenerate_len) {
                     bool collapsed = false;
                     for (auto& L : active_boundary_loops_) {
@@ -2034,7 +1888,7 @@ void DelaunayTriangulator::enforce_constraints() {
 
             // Mark this constraint as permanently failed so we don't trigger
             // infinite restarts if a later edge splits + restarts from 0.
-            permanently_failed.insert(detail::pack_edge(a, b));
+            permanently_failed.insert(pack_edge(a, b));
             LOGT_ERROR(LogGeometry, "Failed to recover constraint edge (%d,%d).", a, b);
 
             if (!dumped_failure_diagnostics && failure_count < 12) {
@@ -2043,17 +1897,16 @@ void DelaunayTriangulator::enforce_constraints() {
                 if (a >= 0 && b >= 0 && a < (int)points.size() && b < (int)points.size()) {
                     const glm::dvec2 A = points[a].p;
                     const glm::dvec2 B = points[b].p;
-                    const double seg_len = std::hypot(B.x - A.x, B.y - A.y);
+                    const double seg_len = geom2d::vec::dist(A, B);
 
                     build_adjacency();
                     int intersecting_edges = 0;
-                    for (const auto& e : edges_cache_) {
-                        if (e.a < 0 || e.b < 0) continue;
-                        if (e.a >= (int)points.size() || e.b >= (int)points.size()) continue;
+                    for (const EdgeInfo& e : edges_cache_) {
+                        if (!e.valid_vertices(points.size())) continue;
                         if (share_endpoint(a, b, e.a, e.b)) continue;
                         const glm::dvec2 C = points[e.a].p;
                         const glm::dvec2 D = points[e.b].p;
-                        if (segments_intersect(A, B, C, D, config.epsilon)) {
+                        if (geom2d::segment::intersect(A, B, C, D, config.epsilon)) {
                             ++intersecting_edges;
                         }
                     }
@@ -2105,9 +1958,9 @@ DelaunayTriangulationResult DelaunayTriangulator::build_result_from_state() cons
         R.vert2tri.assign(R.points.size(), {});
         for (size_t i = 0; i < R.triangles.size(); ++i) {
             const auto& t = R.triangles[i];
-            if ((size_t)t.v[0] < R.points.size()) R.vert2tri[t.v[0]].push_back((int)i);
-            if ((size_t)t.v[1] < R.points.size()) R.vert2tri[t.v[1]].push_back((int)i);
-            if ((size_t)t.v[2] < R.points.size()) R.vert2tri[t.v[2]].push_back((int)i);
+            if (t.valid_vertex(0, R.points.size())) R.vert2tri[t.v[0]].push_back((int)i);
+            if (t.valid_vertex(1, R.points.size())) R.vert2tri[t.v[1]].push_back((int)i);
+            if (t.valid_vertex(2, R.points.size())) R.vert2tri[t.v[2]].push_back((int)i);
         }
 
         build_edges_for_result(R);
@@ -2182,13 +2035,13 @@ int DelaunayTriangulator::find_blocking_vertex_on_segment(int a, int b) const {
     const double eps = std::max(1e-6, config.epsilon * 1e7);
 
     int best = -1;
-    double best_t = 1e300;
+    double best_t = math::DMAX;
 
     for (int i = 0; i < (int)points.size(); ++i) {
         if (i == a || i == b) continue;
         const glm::dvec2 P = points[i].p;
 
-        if (!point_on_segment_eps(P, A, B, eps)) continue;
+        if (!geom2d::segment::point_on_segment(P, A, B, eps)) continue;
 
         const glm::dvec2 AP = P - A;
         const double t = (AP.x*AB.x + AP.y*AB.y) / ab2; // projection parameter
