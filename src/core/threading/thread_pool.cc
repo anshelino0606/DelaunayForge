@@ -88,6 +88,8 @@ struct ThreadPool::Impl {
         ThreadPool* owner = nullptr;
         Impl* impl = nullptr;
         std::size_t index = 0;
+        TaskPoolAllocator::FreeNode* task_cache = nullptr;
+        std::size_t task_cache_count = 0;
         WorkStealingDeque local_queue;
         BoundedMPSCQueue remote_queue;
         std::thread thread;
@@ -104,6 +106,28 @@ struct ThreadPool::Impl {
     alignas(constants::kCacheLineSize) std::atomic<std::size_t> next_worker{0};
     alignas(constants::kCacheLineSize) std::atomic<std::uint64_t> signal_epoch{0};
     inline static thread_local Worker* tls_worker = nullptr;
+
+    void refill_task_cache(Worker& worker) {
+        if (worker.task_cache != nullptr) {
+            return;
+        }
+
+        worker.task_cache = task_allocator.acquire_batch(constants::kTaskPoolLocalCacheRefillCount);
+        worker.task_cache_count = 0;
+        for (auto* node = worker.task_cache; node != nullptr; node = node->next) {
+            ++worker.task_cache_count;
+        }
+    }
+
+    void flush_task_cache(Worker& worker) noexcept {
+        if (worker.task_cache == nullptr) {
+            return;
+        }
+
+        task_allocator.release_batch(worker.task_cache);
+        worker.task_cache = nullptr;
+        worker.task_cache_count = 0;
+    }
 
     void worker_loop(Worker& self) {
         tls_worker = &self;
@@ -133,6 +157,8 @@ struct ThreadPool::Impl {
         backoff_relax(constants::kIdleBackoffSpins);
 #endif
         }
+
+    flush_task_cache(self);
 
         tls_worker = nullptr;
     }
@@ -277,10 +303,42 @@ void ThreadPool::wait_idle() {
 }
 
 void* ThreadPool::allocate_task_memory_(std::size_t size, std::size_t alignment) {
+    Impl::Worker* local = Impl::tls_worker;
+    if (local != nullptr && local->owner == this && impl_->task_allocator.can_pool(size, alignment)) {
+        if (local->task_cache == nullptr) {
+            impl_->refill_task_cache(*local);
+        }
+
+        if (local->task_cache != nullptr) {
+            auto* node = local->task_cache;
+            local->task_cache = node->next;
+            node->next = nullptr;
+            if (local->task_cache_count > 0) {
+                --local->task_cache_count;
+            }
+            return node;
+        }
+    }
+
     return impl_->task_allocator.allocate(size, alignment);
 }
 
 void ThreadPool::deallocate_task_memory_(void* ptr, std::size_t size, std::size_t alignment) noexcept {
+    Impl::Worker* local = Impl::tls_worker;
+    if (local != nullptr && local->owner == this && impl_->task_allocator.can_pool(size, alignment)) {
+        auto* node = static_cast<TaskPoolAllocator::FreeNode*>(ptr);
+        node->next = local->task_cache;
+        local->task_cache = node;
+        ++local->task_cache_count;
+
+        if (local->task_cache_count >= constants::kTaskPoolLocalCacheHighWatermark) {
+            impl_->task_allocator.release_batch(local->task_cache);
+            local->task_cache = nullptr;
+            local->task_cache_count = 0;
+        }
+        return;
+    }
+
     impl_->task_allocator.deallocate(ptr, size, alignment);
 }
 

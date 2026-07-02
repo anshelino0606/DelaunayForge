@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -41,7 +42,7 @@ constexpr std::size_t kExceptionTestQueueCapacity = 128;
 constexpr std::size_t kLargeCallablePadding = fem::threading::constants::kTaskPoolBlockSize + 64;
 
 std::atomic<int> g_unhandled_exception_count{0};
-
+    
 void count_unhandled_exception(std::exception_ptr exception) noexcept {
     if (exception == nullptr) {
         return;
@@ -105,6 +106,58 @@ bool test_parallel_for_covers_all_ranges() {
     }
 
     return true;
+}
+
+bool test_parallel_for_move_only_body() {
+    fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+    std::vector<int> values(kParallelForCountSize, 0);
+    auto bias = std::make_unique<int>(7);
+
+    pool.parallel_for<int>(0, static_cast<int>(values.size()), kParallelForGrainSize,
+        [&values, bias = std::move(bias)](int begin, int end) {
+            for (int index = begin; index < end; ++index) {
+                values[static_cast<std::size_t>(index)] = index + *bias;
+            }
+        });
+
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (values[index] != static_cast<int>(index) + 7) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_parallel_for_propagates_exception() {
+    fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+    std::atomic<int> scheduled_after_exception{0};
+
+    try {
+        pool.parallel_for<int>(0, static_cast<int>(kParallelForCountSize), kParallelForGrainSize,
+            [](int begin, int end) {
+                if (begin <= 123 && 123 < end) {
+                    throw std::runtime_error("parallel_for failure");
+                }
+
+                volatile int sink = 0;
+                for (int index = begin; index < end; ++index) {
+                    sink += index;
+                }
+                (void)sink;
+            });
+        return false;
+    } catch (const std::runtime_error&) {
+    }
+
+    if (!pool.schedule([&scheduled_after_exception] {
+            scheduled_after_exception.fetch_add(1, std::memory_order_relaxed);
+        })) {
+        return false;
+    }
+
+    pool.wait_idle();
+    return scheduled_after_exception.load(std::memory_order_relaxed) == 1;
 }
 
 bool test_nested_scheduling() {
@@ -325,6 +378,8 @@ int main(int argc, char** argv) {
         {"schedule_and_wait_idle", &test_schedule_and_wait_idle},
         {"submit_returns_values", &test_submit_returns_values},
         {"parallel_for_covers_all_ranges", &test_parallel_for_covers_all_ranges},
+        {"parallel_for_move_only_body", &test_parallel_for_move_only_body},
+        {"parallel_for_propagates_exception", &test_parallel_for_propagates_exception},
         {"nested_scheduling", &test_nested_scheduling},
         {"spin_rw_lock_parallel_readers", &test_spin_rw_lock_allows_parallel_readers},
         {"detached_exception_handler_invoked", &test_detached_exception_handler_invoked},

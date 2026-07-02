@@ -58,14 +58,11 @@ void* TaskPoolAllocator::allocate(std::size_t size, std::size_t alignment) {
         return ::operator new(size, std::align_val_t(alignment));
     }
 
-    lock_();
-    if (free_list_ == nullptr) {
-        allocate_slab_();
+    FreeNode* node = acquire_batch(1);
+    if (node == nullptr) {
+        throw std::bad_alloc();
     }
 
-    FreeNode* node = free_list_;
-    free_list_ = node->next;
-    unlock_();
     return node;
 }
 
@@ -83,6 +80,49 @@ void TaskPoolAllocator::deallocate(void* ptr, std::size_t size, std::size_t alig
     FreeNode* node = static_cast<FreeNode*>(ptr);
     node->next = free_list_;
     free_list_ = node;
+    unlock_();
+}
+
+bool TaskPoolAllocator::can_pool(std::size_t size, std::size_t alignment) const noexcept {
+    return can_pool_(size, alignment);
+}
+
+TaskPoolAllocator::FreeNode* TaskPoolAllocator::acquire_batch(std::size_t count) {
+    if (count == 0) {
+        return nullptr;
+    }
+
+    lock_();
+    while (free_list_ == nullptr) {
+        allocate_slab_();
+    }
+
+    FreeNode* head = free_list_;
+    FreeNode* tail = head;
+    std::size_t acquired = 1;
+    while (acquired < count && tail->next != nullptr) {
+        tail = tail->next;
+        ++acquired;
+    }
+
+    free_list_ = tail->next;
+    tail->next = nullptr;
+    unlock_();
+    return head;
+}
+
+void TaskPoolAllocator::release_batch(FreeNode* head) noexcept {
+    if (head == nullptr) {
+        return;
+    }
+
+    lock_();
+    FreeNode* tail = head;
+    while (tail->next != nullptr) {
+        tail = tail->next;
+    }
+    tail->next = free_list_;
+    free_list_ = head;
     unlock_();
 }
 

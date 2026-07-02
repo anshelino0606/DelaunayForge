@@ -9,6 +9,10 @@ namespace fem::threading {
 
 class TaskPoolAllocator final {
 public:
+    struct FreeNode {
+        FreeNode* next;
+    };
+
     TaskPoolAllocator(
         std::size_t block_size = 0,
         std::size_t blocks_per_slab = 0
@@ -20,12 +24,11 @@ public:
 
     [[nodiscard]] void* allocate(std::size_t size, std::size_t alignment);
     void deallocate(void* ptr, std::size_t size, std::size_t alignment) noexcept;
+    [[nodiscard]] bool can_pool(std::size_t size, std::size_t alignment) const noexcept;
+    [[nodiscard]] FreeNode* acquire_batch(std::size_t count);
+    void release_batch(FreeNode* head) noexcept;
 
 private:
-    struct FreeNode {
-        FreeNode* next;
-    };
-
     [[nodiscard]] bool can_pool_(std::size_t size, std::size_t alignment) const noexcept;
     void allocate_slab_();
     void lock_() noexcept;

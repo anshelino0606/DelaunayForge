@@ -17,6 +17,8 @@ function(fem_add_thread_pool_tests)
     schedule_and_wait_idle
     submit_returns_values
     parallel_for_covers_all_ranges
+    parallel_for_move_only_body
+    parallel_for_propagates_exception
     nested_scheduling
     spin_rw_lock_parallel_readers
     detached_exception_handler_invoked

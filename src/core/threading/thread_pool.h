@@ -71,19 +71,47 @@ public:
         const std::size_t worker_count = size() == 0 ? 1 : size();
         const std::size_t chunk_count = static_cast<std::size_t>((end - begin + grain_size - 1) / grain_size);
         const std::size_t task_count = worker_count < chunk_count ? worker_count : chunk_count;
-        auto next = std::make_shared<std::atomic<Index>>(begin);
-        auto body = std::make_shared<std::decay_t<Fn>>(std::forward<Fn>(fn));
+        std::decay_t<Fn> body(std::forward<Fn>(fn));
+        std::atomic<Index> next(begin);
+        std::atomic<std::size_t> pending(task_count - 1);
+        std::atomic<std::size_t> wake(0);
+        std::atomic<bool> cancel(false);
+        std::atomic<bool> exception_captured(false);
+        std::exception_ptr first_exception;
 
-        auto consume = [next, body, begin, end, grain_size]() mutable {
-            (void)begin;
-            for (;;) {
-                const Index chunk_begin = next->fetch_add(grain_size, std::memory_order_relaxed);
-                if (chunk_begin >= end) {
-                    return;
+        auto capture_exception = [&cancel, &exception_captured, &first_exception](std::exception_ptr exception) noexcept {
+            cancel.store(true, std::memory_order_release);
+            bool expected = false;
+            if (exception_captured.compare_exchange_strong(
+                    expected,
+                    true,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
+                first_exception = exception;
+            }
+        };
+
+        auto consume = [&body, &next, &cancel, &capture_exception, end, grain_size]() noexcept {
+            try {
+                for (;;) {
+                    if (cancel.load(std::memory_order_acquire)) {
+                        return;
+                    }
+
+                    const Index chunk_begin = next.fetch_add(grain_size, std::memory_order_relaxed);
+                    if (chunk_begin >= end) {
+                        return;
+                    }
+
+                    if (cancel.load(std::memory_order_acquire)) {
+                        return;
+                    }
+
+                    const Index chunk_end = chunk_begin + grain_size < end ? chunk_begin + grain_size : end;
+                    body(chunk_begin, chunk_end);
                 }
-
-                const Index chunk_end = chunk_begin + grain_size < end ? chunk_begin + grain_size : end;
-                (*body)(chunk_begin, chunk_end);
+            } catch (...) {
+                capture_exception(std::current_exception());
             }
         };
 
@@ -92,34 +120,35 @@ public:
             return;
         }
 
-        auto pending = std::make_shared<std::atomic<std::size_t>>(task_count - 1);
-        auto wake = std::make_shared<std::atomic<std::size_t>>(0);
-
         for (std::size_t index = 1; index < task_count; ++index) {
-            if (!schedule([consume, pending, wake]() mutable {
+            if (!schedule([&consume, &pending, &wake]() {
                     consume();
-                    pending->fetch_sub(1, std::memory_order_acq_rel);
+                    pending.fetch_sub(1, std::memory_order_acq_rel);
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-                    wake->fetch_add(1, std::memory_order_release);
-                    wake->notify_one();
+                    wake.fetch_add(1, std::memory_order_release);
+                    wake.notify_one();
 #endif
                 })) {
-                pending->fetch_sub(1, std::memory_order_acq_rel);
+                pending.fetch_sub(1, std::memory_order_acq_rel);
             }
         }
 
         consume();
 
-        while (pending->load(std::memory_order_acquire) != 0) {
+        while (pending.load(std::memory_order_acquire) != 0) {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-            const std::size_t ticket = wake->load(std::memory_order_acquire);
-            if (pending->load(std::memory_order_acquire) == 0) {
+            const std::size_t ticket = wake.load(std::memory_order_acquire);
+            if (pending.load(std::memory_order_acquire) == 0) {
                 break;
             }
-            wake->wait(ticket, std::memory_order_relaxed);
+            wake.wait(ticket, std::memory_order_relaxed);
 #else
             std::this_thread::yield();
 #endif
+        }
+
+        if (first_exception != nullptr) {
+            std::rethrow_exception(first_exception);
         }
     }
 
