@@ -1,6 +1,7 @@
 #include "thread_pool.h"
 
 #include "bounded_mpsc_queue.h"
+#include "task_pool_allocator.h"
 #include "threading_constants.h"
 #include "work_stealing_deque.h"
 
@@ -49,6 +50,7 @@ struct ThreadPool::Impl {
         : owner(owner_in)
         , local_queue_capacity(local_capacity)
         , remote_queue_capacity(remote_capacity)
+        , task_allocator(constants::kTaskPoolBlockSize, constants::kTaskPoolBlocksPerSlab)
         , unhandled_exception_handler(
             unhandled_exception_handler_in != nullptr
                 ? unhandled_exception_handler_in
@@ -94,6 +96,7 @@ struct ThreadPool::Impl {
     ThreadPool* owner = nullptr;
     std::size_t local_queue_capacity = 0;
     std::size_t remote_queue_capacity = 0;
+    TaskPoolAllocator task_allocator;
     std::vector<std::unique_ptr<Worker>> workers;
     UnhandledExceptionHandler unhandled_exception_handler = nullptr;
     alignas(constants::kCacheLineSize) std::atomic<bool> accepting_tasks{true};
@@ -108,7 +111,7 @@ struct ThreadPool::Impl {
         for (;;) {
             if (ThreadPool::TaskBase* task = try_take_task(self)) {
                 task->run(*owner);
-                delete task;
+                task->destroy(*owner);
                 finish_task();
                 continue;
             }
@@ -213,13 +216,12 @@ std::size_t ThreadPool::size() const noexcept {
     return impl_ == nullptr ? 0 : impl_->workers.size();
 }
 
-bool ThreadPool::enqueue_owned_task_(std::unique_ptr<TaskBase> task) {
-    TaskBase* raw = task.release();
-    if (enqueue_task_(raw)) {
+bool ThreadPool::enqueue_owned_task_(TaskBase* task) {
+    if (enqueue_task_(task)) {
         return true;
     }
 
-    delete raw;
+    task->destroy(*this);
     return false;
 }
 
@@ -239,7 +241,7 @@ bool ThreadPool::enqueue_task_(TaskBase* task) {
 
         task->run(*this);
         impl_->finish_task();
-        delete task;
+        task->destroy(*this);
         return true;
     }
 
@@ -268,10 +270,18 @@ void ThreadPool::wait_idle() {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
         impl_->pending_tasks.wait(pending, std::memory_order_relaxed);
 #else
-    backoff_relax(constants::kIdleBackoffSpins);
+        backoff_relax(constants::kIdleBackoffSpins);
 #endif
         pending = impl_->pending_tasks.load(std::memory_order_acquire);
     }
+}
+
+void* ThreadPool::allocate_task_memory_(std::size_t size, std::size_t alignment) {
+    return impl_->task_allocator.allocate(size, alignment);
+}
+
+void ThreadPool::deallocate_task_memory_(void* ptr, std::size_t size, std::size_t alignment) noexcept {
+    impl_->task_allocator.deallocate(ptr, size, alignment);
 }
 
 void ThreadPool::handle_detached_task_exception_(std::exception_ptr exception) noexcept {

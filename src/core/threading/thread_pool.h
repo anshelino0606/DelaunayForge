@@ -8,6 +8,7 @@
 #include <exception>
 #include <future>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -37,7 +38,7 @@ public:
     template <class Fn>
     bool schedule(Fn&& fn) {
         using TaskType = DetachedTask<std::decay_t<Fn>>;
-        return enqueue_owned_task_(std::make_unique<TaskType>(std::forward<Fn>(fn)));
+        return enqueue_owned_task_(create_task_<TaskType>(std::forward<Fn>(fn)));
     }
 
     template <class Fn>
@@ -45,10 +46,10 @@ public:
         using Result = std::invoke_result_t<std::decay_t<Fn>&>;
         using TaskType = PromiseTask<std::decay_t<Fn>, Result>;
 
-        auto promise = std::make_shared<std::promise<Result>>();
-        auto future = promise->get_future();
+        std::promise<Result> promise;
+        auto future = promise.get_future();
 
-        if (!enqueue_owned_task_(std::make_unique<TaskType>(std::forward<Fn>(fn), promise))) {
+        if (!enqueue_owned_task_(create_task_<TaskType>(std::forward<Fn>(fn), std::move(promise)))) {
             throw std::runtime_error("ThreadPool is shutting down");
         }
 
@@ -127,13 +128,26 @@ public:
 
 private:
     struct TaskBase {
+        using DestroyFn = void (*)(TaskBase*, ThreadPool&) noexcept;
+
+        explicit TaskBase(DestroyFn destroy_fn) noexcept : destroy_fn_(destroy_fn) {}
         virtual ~TaskBase() = default;
         virtual void run(ThreadPool& pool) noexcept = 0;
+
+        void destroy(ThreadPool& pool) noexcept {
+            destroy_fn_(this, pool);
+        }
+
+    private:
+        DestroyFn destroy_fn_;
     };
 
     template <class Fn>
     struct DetachedTask final : TaskBase {
-        explicit DetachedTask(Fn&& fn_in) : fn(std::move(fn_in)) {}
+        template <class F>
+        explicit DetachedTask(F&& fn_in)
+            : TaskBase(&DetachedTask::destroy_)
+            , fn(std::forward<F>(fn_in)) {}
 
         void run(ThreadPool& pool) noexcept override {
             try {
@@ -144,33 +158,61 @@ private:
         }
 
         Fn fn;
+
+        static void destroy_(TaskBase* base, ThreadPool& pool) noexcept {
+            auto* task = static_cast<DetachedTask*>(base);
+            task->~DetachedTask();
+            pool.deallocate_task_memory_(task, sizeof(DetachedTask), alignof(DetachedTask));
+        }
     };
 
     template <class Fn, class Result>
     struct PromiseTask final : TaskBase {
-        PromiseTask(Fn&& fn_in, std::shared_ptr<std::promise<Result>> promise_in)
-            : fn(std::move(fn_in)), promise(std::move(promise_in)) {}
+        template <class F>
+        PromiseTask(F&& fn_in, std::promise<Result>&& promise_in)
+            : TaskBase(&PromiseTask::destroy_)
+            , fn(std::forward<F>(fn_in))
+            , promise(std::move(promise_in)) {}
 
         void run(ThreadPool& pool) noexcept override {
             (void)pool;
             try {
                 if constexpr (std::is_void_v<Result>) {
                     fn();
-                    promise->set_value();
+                    promise.set_value();
                 } else {
-                    promise->set_value(fn());
+                    promise.set_value(fn());
                 }
             } catch (...) {
-                promise->set_exception(std::current_exception());
+                promise.set_exception(std::current_exception());
             }
         }
 
         Fn fn;
-        std::shared_ptr<std::promise<Result>> promise;
+        std::promise<Result> promise;
+
+        static void destroy_(TaskBase* base, ThreadPool& pool) noexcept {
+            auto* task = static_cast<PromiseTask*>(base);
+            task->~PromiseTask();
+            pool.deallocate_task_memory_(task, sizeof(PromiseTask), alignof(PromiseTask));
+        }
     };
 
-    bool enqueue_owned_task_(std::unique_ptr<TaskBase> task);
+    template <class TaskType, class... Args>
+    TaskType* create_task_(Args&&... args) {
+        void* memory = allocate_task_memory_(sizeof(TaskType), alignof(TaskType));
+        try {
+            return ::new (memory) TaskType(std::forward<Args>(args)...);
+        } catch (...) {
+            deallocate_task_memory_(memory, sizeof(TaskType), alignof(TaskType));
+            throw;
+        }
+    }
+
+    bool enqueue_owned_task_(TaskBase* task);
     bool enqueue_task_(TaskBase* task);
+    void* allocate_task_memory_(std::size_t size, std::size_t alignment);
+    void deallocate_task_memory_(void* ptr, std::size_t size, std::size_t alignment) noexcept;
     void handle_detached_task_exception_(std::exception_ptr exception) noexcept;
     static void terminate_on_unhandled_exception_(std::exception_ptr exception) noexcept;
 

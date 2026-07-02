@@ -4,6 +4,7 @@ function(fem_add_thread_pool_tests)
   add_executable(thread_pool_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool_tests.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/task_pool_allocator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/work_stealing_deque.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/bounded_mpsc_queue.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/spin_rw_lock.cc
@@ -18,6 +19,8 @@ function(fem_add_thread_pool_tests)
     parallel_for_covers_all_ranges
     nested_scheduling
     spin_rw_lock_parallel_readers
+    detached_exception_handler_invoked
+    large_callable_fallback_allocation
     stress_many_external_producers
     stress_parallel_for_large_range
     stress_recursive_fan_out
@@ -26,4 +29,21 @@ function(fem_add_thread_pool_tests)
   foreach(test_case IN LISTS thread_pool_test_cases)
     add_test(NAME thread_pool_tests.${test_case} COMMAND thread_pool_tests ${test_case})
   endforeach()
+
+  add_executable(thread_pool_benchmarks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool_benchmarks.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/task_pool_allocator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/work_stealing_deque.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/bounded_mpsc_queue.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/spin_rw_lock.cc
+  )
+
+  fem_target_common_includes(thread_pool_benchmarks)
+  target_link_libraries(thread_pool_benchmarks PRIVATE pthread)
+
+  add_test(
+    NAME thread_pool_perf_smoke
+    COMMAND thread_pool_benchmarks --smoke
+  )
 endfunction()

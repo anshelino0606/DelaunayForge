@@ -1,6 +1,8 @@
 #include "thread_pool.h"
+#include "threading_constants.h"
 #include "spin_rw_lock.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -36,6 +38,7 @@ constexpr int kRecursiveRootTaskCount = 128;
 constexpr int kRecursiveBranchTaskCount = 32;
 constexpr std::size_t kRecursiveQueueCapacity = 256;
 constexpr std::size_t kExceptionTestQueueCapacity = 128;
+constexpr std::size_t kLargeCallablePadding = fem::threading::constants::kTaskPoolBlockSize + 64;
 
 std::atomic<int> g_unhandled_exception_count{0};
 
@@ -287,6 +290,29 @@ bool test_detached_exception_handler_invoked() {
     return g_unhandled_exception_count.load(std::memory_order_relaxed) == 1;
 }
 
+bool test_large_callable_fallback_allocation() {
+    struct LargeCallable {
+        std::array<std::byte, kLargeCallablePadding> payload{};
+        std::atomic<int>* counter = nullptr;
+
+        void operator()() const {
+            counter->fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    fem::threading::ThreadPool pool(kSmallTestWorkerCount);
+    std::atomic<int> counter{0};
+    LargeCallable callable;
+    callable.counter = &counter;
+
+    if (!pool.schedule(callable)) {
+        return false;
+    }
+
+    pool.wait_idle();
+    return counter.load(std::memory_order_relaxed) == 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -302,6 +328,7 @@ int main(int argc, char** argv) {
         {"nested_scheduling", &test_nested_scheduling},
         {"spin_rw_lock_parallel_readers", &test_spin_rw_lock_allows_parallel_readers},
         {"detached_exception_handler_invoked", &test_detached_exception_handler_invoked},
+        {"large_callable_fallback_allocation", &test_large_callable_fallback_allocation},
         {"stress_many_external_producers", &test_stress_many_external_producers},
         {"stress_parallel_for_large_range", &test_stress_parallel_for_large_range},
         {"stress_recursive_fan_out", &test_stress_recursive_fan_out},

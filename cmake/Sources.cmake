@@ -37,6 +37,7 @@ function(fem_collect_sources out_sources)
   list(FILTER project_sources EXCLUDE REGEX ".*/opengl/.*")
   list(FILTER project_sources EXCLUDE REGEX ".*/(shader|vao|vbo|ebo|ubo|mesh)\\.(cc|cpp)$")
   list(FILTER project_sources EXCLUDE REGEX ".*/thread_pool_tests\\.cc$")
+  list(FILTER project_sources EXCLUDE REGEX ".*/thread_pool_benchmarks\.cc$")
 
   set(${out_sources} ${project_sources} PARENT_SCOPE)
 endfunction()
