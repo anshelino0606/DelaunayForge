@@ -1,5 +1,7 @@
 #include "spin_rw_lock.h"
 
+#include "threading_constants.h"
+
 #include <thread>
 
 namespace fem::threading {
@@ -20,7 +22,7 @@ inline void cpu_relax() noexcept {
 }
 
 inline void backoff_relax(std::size_t spins) noexcept {
-    if (spins < 32) {
+    if (spins < constants::kSpinPauseThreshold) {
         cpu_relax();
         return;
     }

@@ -1,5 +1,7 @@
 #include "work_stealing_deque.h"
 
+#include "threading_constants.h"
+
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -9,8 +11,6 @@
 namespace fem::threading {
 
 namespace {
-
-constexpr std::size_t kThreadingCacheLine = 64;
 
 bool is_power_of_two(std::size_t value) noexcept {
     return value != 0 && (value & (value - 1)) == 0;
@@ -30,8 +30,8 @@ struct WorkStealingDeque::Impl {
 
     const std::size_t capacity_pow2;
     const std::size_t mask;
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> top{0};
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> bottom{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> top{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> bottom{0};
     std::vector<std::atomic<void*>> slots;
 };
 

@@ -1,5 +1,7 @@
 #include "bounded_mpsc_queue.h"
 
+#include "threading_constants.h"
+
 #include <atomic>
 #include <cstdint>
 #include <new>
@@ -10,8 +12,6 @@ namespace fem::threading {
 
 namespace {
 
-constexpr std::size_t kThreadingCacheLine = 64;
-
 bool is_power_of_two(std::size_t value) noexcept {
     return value != 0 && (value & (value - 1)) == 0;
 }
@@ -19,7 +19,7 @@ bool is_power_of_two(std::size_t value) noexcept {
 } // namespace
 
 struct BoundedMPSCQueue::Impl {
-    struct alignas(kThreadingCacheLine) Cell {
+    struct alignas(constants::kCacheLineSize) Cell {
         std::atomic<std::size_t> seq{0};
         void* value = nullptr;
     };
@@ -35,8 +35,8 @@ struct BoundedMPSCQueue::Impl {
 
     const std::size_t capacity_pow2;
     const std::size_t mask;
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> head{0};
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> tail{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> head{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> tail{0};
     std::vector<Cell> cells;
 };
 

@@ -1,6 +1,7 @@
 #include "thread_pool.h"
 
 #include "bounded_mpsc_queue.h"
+#include "threading_constants.h"
 #include "work_stealing_deque.h"
 
 #include <thread>
@@ -9,8 +10,6 @@
 namespace fem::threading {
 
 namespace {
-
-constexpr std::size_t kThreadingCacheLine = 64;
 
 inline void cpu_relax() noexcept {
 #if defined(__clang__) || defined(__GNUC__)
@@ -27,7 +26,7 @@ inline void cpu_relax() noexcept {
 }
 
 inline void backoff_relax(std::size_t spins) noexcept {
-    if (spins < 32) {
+    if (spins < constants::kSpinPauseThreshold) {
         cpu_relax();
         return;
     }
@@ -40,19 +39,39 @@ inline void backoff_relax(std::size_t spins) noexcept {
 struct ThreadPool::Impl {
     struct Worker;
 
-    explicit Impl(ThreadPool* owner_in, std::size_t worker_count, std::size_t local_capacity, std::size_t remote_capacity)
+    explicit Impl(
+        ThreadPool* owner_in,
+        std::size_t worker_count,
+        std::size_t local_capacity,
+        std::size_t remote_capacity,
+        UnhandledExceptionHandler unhandled_exception_handler_in
+    )
         : owner(owner_in)
         , local_queue_capacity(local_capacity)
-        , remote_queue_capacity(remote_capacity) {
+        , remote_queue_capacity(remote_capacity)
+        , unhandled_exception_handler(
+            unhandled_exception_handler_in != nullptr
+                ? unhandled_exception_handler_in
+                : &ThreadPool::terminate_on_unhandled_exception_) {
         workers.reserve(worker_count);
         for (std::size_t index = 0; index < worker_count; ++index) {
             workers.push_back(std::make_unique<Worker>(owner, this, index, local_queue_capacity, remote_queue_capacity));
         }
 
-        for (auto& worker : workers) {
-            worker->thread = std::thread([this, worker = worker.get()] {
-                worker_loop(*worker);
-            });
+        try {
+            for (auto& worker : workers) {
+                worker->thread = std::thread([this, worker = worker.get()] {
+                    worker_loop(*worker);
+                });
+            }
+        } catch (...) {
+            accepting_tasks.store(false, std::memory_order_release);
+            signal_epoch.fetch_add(1, std::memory_order_release);
+#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
+            signal_epoch.notify_all();
+#endif
+            join_workers();
+            throw;
         }
     }
 
@@ -76,10 +95,11 @@ struct ThreadPool::Impl {
     std::size_t local_queue_capacity = 0;
     std::size_t remote_queue_capacity = 0;
     std::vector<std::unique_ptr<Worker>> workers;
-    alignas(kThreadingCacheLine) std::atomic<bool> accepting_tasks{true};
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> pending_tasks{0};
-    alignas(kThreadingCacheLine) std::atomic<std::size_t> next_worker{0};
-    alignas(kThreadingCacheLine) std::atomic<std::uint64_t> signal_epoch{0};
+    UnhandledExceptionHandler unhandled_exception_handler = nullptr;
+    alignas(constants::kCacheLineSize) std::atomic<bool> accepting_tasks{true};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> pending_tasks{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::size_t> next_worker{0};
+    alignas(constants::kCacheLineSize) std::atomic<std::uint64_t> signal_epoch{0};
     inline static thread_local Worker* tls_worker = nullptr;
 
     void worker_loop(Worker& self) {
@@ -87,7 +107,7 @@ struct ThreadPool::Impl {
 
         for (;;) {
             if (ThreadPool::TaskBase* task = try_take_task(self)) {
-                task->run();
+                task->run(*owner);
                 delete task;
                 finish_task();
                 continue;
@@ -107,7 +127,7 @@ struct ThreadPool::Impl {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
             signal_epoch.wait(epoch, std::memory_order_relaxed);
 #else
-            backoff_relax(64);
+        backoff_relax(constants::kIdleBackoffSpins);
 #endif
         }
 
@@ -165,7 +185,11 @@ struct ThreadPool::Impl {
     }
 };
 
-ThreadPool::ThreadPool(std::size_t worker_count, std::size_t local_queue_capacity_pow2, std::size_t remote_queue_capacity_pow2) {
+ThreadPool::ThreadPool(
+    std::size_t worker_count,
+    std::size_t local_queue_capacity_pow2,
+    std::size_t remote_queue_capacity_pow2,
+    UnhandledExceptionHandler unhandled_exception_handler) {
     if (worker_count == 0) {
         worker_count = std::thread::hardware_concurrency();
         if (worker_count == 0) {
@@ -173,11 +197,13 @@ ThreadPool::ThreadPool(std::size_t worker_count, std::size_t local_queue_capacit
         }
     }
 
-    impl_ = std::make_unique<Impl>(this, worker_count, local_queue_capacity_pow2, remote_queue_capacity_pow2);
+    impl_ = std::make_unique<Impl>(
+        this,
+        worker_count,
+        local_queue_capacity_pow2,
+        remote_queue_capacity_pow2,
+        unhandled_exception_handler);
 }
-
-ThreadPool::ThreadPool(std::size_t worker_count)
-    : ThreadPool(worker_count, 1024, 1024) {}
 
 ThreadPool::~ThreadPool() {
     shutdown();
@@ -211,7 +237,7 @@ bool ThreadPool::enqueue_task_(TaskBase* task) {
             return true;
         }
 
-        task->run();
+        task->run(*this);
         impl_->finish_task();
         delete task;
         return true;
@@ -242,10 +268,24 @@ void ThreadPool::wait_idle() {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
         impl_->pending_tasks.wait(pending, std::memory_order_relaxed);
 #else
-        backoff_relax(64);
+    backoff_relax(constants::kIdleBackoffSpins);
 #endif
         pending = impl_->pending_tasks.load(std::memory_order_acquire);
     }
+}
+
+void ThreadPool::handle_detached_task_exception_(std::exception_ptr exception) noexcept {
+    if (impl_ == nullptr || impl_->unhandled_exception_handler == nullptr) {
+        terminate_on_unhandled_exception_(exception);
+        return;
+    }
+
+    impl_->unhandled_exception_handler(exception);
+}
+
+void ThreadPool::terminate_on_unhandled_exception_(std::exception_ptr exception) noexcept {
+    (void)exception;
+    std::terminate();
 }
 
 void ThreadPool::shutdown() {

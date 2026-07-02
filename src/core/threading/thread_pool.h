@@ -1,10 +1,15 @@
 #ifndef FEM_CORE_THREADING_THREAD_POOL_H
 #define FEM_CORE_THREADING_THREAD_POOL_H
 
+#include "threading_constants.h"
+
 #include <atomic>
 #include <cstddef>
+#include <exception>
 #include <future>
 #include <memory>
+#include <stdexcept>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -12,13 +17,14 @@ namespace fem::threading {
 
 class ThreadPool final {
 public:
-    explicit ThreadPool(
-        std::size_t worker_count,
-        std::size_t local_queue_capacity_pow2 = 1024,
-        std::size_t remote_queue_capacity_pow2 = 1024
-    );
+    using UnhandledExceptionHandler = void (*)(std::exception_ptr) noexcept;
 
-    explicit ThreadPool(std::size_t worker_count = 0);
+    explicit ThreadPool(
+        std::size_t worker_count = 0,
+        std::size_t local_queue_capacity_pow2 = constants::kDefaultLocalQueueCapacity,
+        std::size_t remote_queue_capacity_pow2 = constants::kDefaultRemoteQueueCapacity,
+        UnhandledExceptionHandler unhandled_exception_handler = nullptr
+    );
     ~ThreadPool();
 
     ThreadPool(const ThreadPool&) = delete;
@@ -110,6 +116,8 @@ public:
                 break;
             }
             wake->wait(ticket, std::memory_order_relaxed);
+#else
+            std::this_thread::yield();
 #endif
         }
     }
@@ -120,17 +128,18 @@ public:
 private:
     struct TaskBase {
         virtual ~TaskBase() = default;
-        virtual void run() noexcept = 0;
+        virtual void run(ThreadPool& pool) noexcept = 0;
     };
 
     template <class Fn>
     struct DetachedTask final : TaskBase {
         explicit DetachedTask(Fn&& fn_in) : fn(std::move(fn_in)) {}
 
-        void run() noexcept override {
+        void run(ThreadPool& pool) noexcept override {
             try {
                 fn();
             } catch (...) {
+                pool.handle_detached_task_exception_(std::current_exception());
             }
         }
 
@@ -142,7 +151,8 @@ private:
         PromiseTask(Fn&& fn_in, std::shared_ptr<std::promise<Result>> promise_in)
             : fn(std::move(fn_in)), promise(std::move(promise_in)) {}
 
-        void run() noexcept override {
+        void run(ThreadPool& pool) noexcept override {
+            (void)pool;
             try {
                 if constexpr (std::is_void_v<Result>) {
                     fn();
@@ -161,6 +171,8 @@ private:
 
     bool enqueue_owned_task_(std::unique_ptr<TaskBase> task);
     bool enqueue_task_(TaskBase* task);
+    void handle_detached_task_exception_(std::exception_ptr exception) noexcept;
+    static void terminate_on_unhandled_exception_(std::exception_ptr exception) noexcept;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
