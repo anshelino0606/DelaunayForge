@@ -1,6 +1,15 @@
 #ifndef FEM_CORE_MACRO_H
 #define FEM_CORE_MACRO_H
 
+#include <atomic>
+
+#if defined(_MSC_VER)
+  #include <intrin.h>
+  #if defined(_M_IX86) || defined(_M_X64)
+    #include <immintrin.h>
+  #endif
+#endif
+
 #define FEM_CONCAT_IMPL(x, y) x##y
 #define FEM_CONCAT(x, y) FEM_CONCAT_IMPL(x, y)
 
@@ -234,6 +243,61 @@
   #define FEM_RESTRICT __restrict__
 #else
   #define FEM_RESTRICT
+#endif
+
+#define FEM_STD_ATOMIC_WAIT_FEATURE_LEVEL 201907L
+
+#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= FEM_STD_ATOMIC_WAIT_FEATURE_LEVEL
+  #define FEM_HAS_STD_ATOMIC_WAIT 1
+#else
+  #define FEM_HAS_STD_ATOMIC_WAIT 0
+#endif
+
+#if FEM_HAS_STD_ATOMIC_WAIT
+  #define FEM_ATOMIC_NOTIFY_ONE(value) ((value).notify_one())
+  #define FEM_ATOMIC_NOTIFY_ALL(value) ((value).notify_all())
+  #define FEM_ATOMIC_WAIT(value, old_value, order) ((value).wait((old_value), (order)))
+  #define FEM_ATOMIC_BUMP_AND_NOTIFY_ONE(value, order) \
+    do { \
+      (value).fetch_add(1, (order)); \
+      FEM_ATOMIC_NOTIFY_ONE(value); \
+    } while (0)
+  #define FEM_ATOMIC_WAIT_OR(value, old_value, order, fallback_stmt) \
+    do { \
+      FEM_ATOMIC_WAIT((value), (old_value), (order)); \
+    } while (0)
+#else
+  #define FEM_ATOMIC_NOTIFY_ONE(value) ((void)(value))
+  #define FEM_ATOMIC_NOTIFY_ALL(value) ((void)(value))
+  #define FEM_ATOMIC_WAIT(value, old_value, order) ((void)(value), (void)(old_value), (void)(order))
+  #define FEM_ATOMIC_BUMP_AND_NOTIFY_ONE(value, order) ((void)(value), (void)(order))
+  #define FEM_ATOMIC_WAIT_OR(value, old_value, order, fallback_stmt) \
+    do { \
+      (void)(value); \
+      (void)(old_value); \
+      (void)(order); \
+      fallback_stmt; \
+    } while (0)
+#endif
+
+#if defined(_MSC_VER)
+  #if defined(_M_IX86) || defined(_M_X64)
+    #define FEM_CPU_RELAX() _mm_pause()
+  #elif defined(_M_ARM) || defined(_M_ARM64)
+    #define FEM_CPU_RELAX() __yield()
+  #else
+    #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
+  #endif
+#elif defined(__clang__) || defined(__GNUC__)
+  #if defined(__i386__) || defined(__x86_64__)
+    #define FEM_CPU_RELAX() __builtin_ia32_pause()
+  #elif defined(__aarch64__) || defined(__arm__)
+    #define FEM_CPU_RELAX() __asm__ __volatile__("yield")
+  #else
+    #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
+  #endif
+#else
+  #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
 #endif
 
 

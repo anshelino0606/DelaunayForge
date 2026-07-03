@@ -1,0 +1,133 @@
+#include "spin_rw_lock.h"
+
+#include "core/macro.h"
+#include "threading_constants.h"
+
+#include <thread>
+
+namespace fem::threading {
+namespace {
+
+inline void backoff_relax(std::size_t spins) noexcept {
+    if (spins < constants::kSpinPauseThreshold) {
+        FEM_CPU_RELAX();
+        return;
+    }
+
+    std::this_thread::yield();
+}
+
+} // namespace
+
+void SpinRWLock::lock_shared() noexcept {
+    std::uint32_t state = state_.load(std::memory_order_relaxed);
+    std::size_t spins = 0;
+
+    for (;;) {
+        if ((state & kWriterMask) == 0) {
+            if (state_.compare_exchange_weak(
+                    state,
+                    state + 1,
+                    std::memory_order_acquire,
+                    std::memory_order_relaxed)) {
+                return;
+            }
+        } else {
+            backoff_relax(spins++);
+            state = state_.load(std::memory_order_relaxed);
+        }
+    }
+}
+
+bool SpinRWLock::try_lock_shared() noexcept {
+    std::uint32_t state = state_.load(std::memory_order_relaxed);
+    while ((state & kWriterMask) == 0) {
+        if (state_.compare_exchange_weak(
+                state,
+                state + 1,
+                std::memory_order_acquire,
+                std::memory_order_relaxed)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void SpinRWLock::unlock_shared() noexcept {
+    const std::uint32_t previous = state_.fetch_sub(1, std::memory_order_release);
+    if ((previous & kWriterPending) != 0) {
+        FEM_ATOMIC_NOTIFY_ALL(state_);
+    }
+}
+
+void SpinRWLock::lock() noexcept {
+    std::size_t spins = 0;
+
+    for (;;) {
+        std::uint32_t state = state_.load(std::memory_order_relaxed);
+
+        if ((state & kWriterMask) != 0) {
+            backoff_relax(spins++);
+            continue;
+        }
+
+        if (!state_.compare_exchange_weak(
+                state,
+                state | kWriterPending,
+                std::memory_order_acq_rel,
+                std::memory_order_relaxed)) {
+            backoff_relax(spins++);
+            continue;
+        }
+
+        spins = 0;
+        for (;;) {
+            state = state_.load(std::memory_order_acquire);
+            if ((state & kReaderMask) == 0) {
+                std::uint32_t expected = kWriterPending;
+                if (state_.compare_exchange_weak(
+                        expected,
+                        kWriterHeld,
+                        std::memory_order_acq_rel,
+                        std::memory_order_relaxed)) {
+                    return;
+                }
+            }
+
+            backoff_relax(spins++);
+        }
+    }
+}
+
+bool SpinRWLock::try_lock() noexcept {
+    std::uint32_t expected = 0;
+    return state_.compare_exchange_strong(
+        expected,
+        kWriterHeld,
+        std::memory_order_acq_rel,
+        std::memory_order_relaxed);
+}
+
+void SpinRWLock::unlock() noexcept {
+    state_.store(0, std::memory_order_release);
+    FEM_ATOMIC_NOTIFY_ALL(state_);
+}
+
+SharedSpinLockGuard::SharedSpinLockGuard(SpinRWLock& lock) noexcept : lock_(lock) {
+    lock_.lock_shared();
+}
+
+SharedSpinLockGuard::~SharedSpinLockGuard() {
+    lock_.unlock_shared();
+}
+
+UniqueSpinLockGuard::UniqueSpinLockGuard(SpinRWLock& lock) noexcept : lock_(lock) {
+    lock_.lock();
+}
+
+UniqueSpinLockGuard::~UniqueSpinLockGuard() {
+    lock_.unlock();
+}
+
+} // namespace fem::threading

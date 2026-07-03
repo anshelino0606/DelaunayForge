@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE TRUE)
 
+include(CTest)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/$<CONFIG>")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -18,6 +20,7 @@ include(Options)
 include(Dependencies)
 include(Sources)
 include(Shaders)
+include(Tests)
 
 fem_collect_sources(FEM_SOURCES)
 
@@ -54,3 +57,7 @@ endif()
 fem_configure_shaders(DelaunayForge)
 fem_configure_apple_target(DelaunayForge)
 fem_disable_debug_sanitizers_for_third_party()
+
+if(BUILD_TESTING)
+  fem_add_thread_pool_tests()
+endif()
