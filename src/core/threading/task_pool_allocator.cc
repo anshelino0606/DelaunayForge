@@ -1,35 +1,22 @@
 #include "task_pool_allocator.h"
 
+#include "core/macro.h"
+#include "threading_log.h"
 #include "threading_constants.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <new>
-#include <stdexcept>
 #include <thread>
 
 namespace fem::threading {
 
 namespace {
 
-inline void cpu_relax() noexcept {
-#if defined(__clang__) || defined(__GNUC__)
-  #if defined(__i386__) || defined(__x86_64__)
-    __builtin_ia32_pause();
-  #elif defined(__aarch64__) || defined(__arm__)
-    __asm__ __volatile__("yield");
-  #else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-  #endif
-#else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-#endif
-}
-
 inline void backoff_relax(std::size_t spins) noexcept {
     if (spins < constants::kSpinPauseThreshold) {
-        cpu_relax();
+        FEM_CPU_RELAX();
         return;
     }
 
@@ -48,19 +35,30 @@ TaskPoolAllocator::TaskPoolAllocator(std::size_t block_size, std::size_t blocks_
     , blocks_per_slab_(std::max(blocks_per_slab, constants::kTaskPoolBlocksPerSlab)) {}
 
 TaskPoolAllocator::~TaskPoolAllocator() {
-    for (void* slab : slabs_) {
-        ::operator delete(slab, std::align_val_t(alignof(std::max_align_t)));
+    while (slabs_ != nullptr) {
+        SlabNode* node = slabs_;
+        slabs_ = node->next;
+        ::operator delete(node->slab, std::align_val_t(alignof(std::max_align_t)));
+        delete node;
     }
 }
 
-void* TaskPoolAllocator::allocate(std::size_t size, std::size_t alignment) {
+void* TaskPoolAllocator::allocate(std::size_t size, std::size_t alignment) noexcept {
     if (!can_pool_(size, alignment)) {
-        return ::operator new(size, std::align_val_t(alignment));
+        void* memory = ::operator new(size, std::align_val_t(alignment), std::nothrow);
+        if (memory == nullptr) {
+            LOGT_ERROR(LogThreading, "TaskPoolAllocator::allocate(): fallback allocation failed (size=%llu alignment=%llu)",
+                static_cast<unsigned long long>(size),
+                static_cast<unsigned long long>(alignment));
+        }
+        return memory;
     }
 
     FreeNode* node = acquire_batch(1);
     if (node == nullptr) {
-        throw std::bad_alloc();
+        LOGT_ERROR(LogThreading, "TaskPoolAllocator::allocate(): pooled allocation failed (size=%llu alignment=%llu)",
+            static_cast<unsigned long long>(size),
+            static_cast<unsigned long long>(alignment));
     }
 
     return node;
@@ -87,14 +85,17 @@ bool TaskPoolAllocator::can_pool(std::size_t size, std::size_t alignment) const 
     return can_pool_(size, alignment);
 }
 
-TaskPoolAllocator::FreeNode* TaskPoolAllocator::acquire_batch(std::size_t count) {
+TaskPoolAllocator::FreeNode* TaskPoolAllocator::acquire_batch(std::size_t count) noexcept {
     if (count == 0) {
         return nullptr;
     }
 
     lock_();
     while (free_list_ == nullptr) {
-        allocate_slab_();
+        if (!allocate_slab_()) {
+            unlock_();
+            return nullptr;
+        }
     }
 
     FreeNode* head = free_list_;
@@ -130,16 +131,24 @@ bool TaskPoolAllocator::can_pool_(std::size_t size, std::size_t alignment) const
     return size <= block_size_ && alignment <= alignof(std::max_align_t);
 }
 
-void TaskPoolAllocator::allocate_slab_() {
+bool TaskPoolAllocator::allocate_slab_() noexcept {
     const std::size_t bytes = block_stride_ * blocks_per_slab_;
-    void* slab = ::operator new(bytes, std::align_val_t(alignof(std::max_align_t)));
-
-    try {
-        slabs_.push_back(slab);
-    } catch (...) {
-        ::operator delete(slab, std::align_val_t(alignof(std::max_align_t)));
-        throw;
+    void* slab = ::operator new(bytes, std::align_val_t(alignof(std::max_align_t)), std::nothrow);
+    if (slab == nullptr) {
+        LOGT_ERROR(LogThreading, "TaskPoolAllocator::allocate_slab_(): slab allocation failed (bytes=%llu blocks=%llu)",
+            static_cast<unsigned long long>(bytes),
+            static_cast<unsigned long long>(blocks_per_slab_));
+        return false;
     }
+
+    SlabNode* node = new (std::nothrow) SlabNode{slab, slabs_};
+    if (node == nullptr) {
+        ::operator delete(slab, std::align_val_t(alignof(std::max_align_t)));
+        LOGT_ERROR(LogThreading, "TaskPoolAllocator::allocate_slab_(): slab tracking allocation failed");
+        return false;
+    }
+
+    slabs_ = node;
 
     auto* data = static_cast<std::byte*>(slab);
     for (std::size_t index = 0; index < blocks_per_slab_; ++index) {
@@ -147,6 +156,8 @@ void TaskPoolAllocator::allocate_slab_() {
         node->next = free_list_;
         free_list_ = node;
     }
+
+    return true;
 }
 
 void TaskPoolAllocator::lock_() noexcept {

@@ -19,12 +19,12 @@ public:
     void unlock() noexcept;
 
 private:
-    static constexpr std::uint32_t kWriterHeld = 1u << 31;
-    static constexpr std::uint32_t kWriterPending = 1u << 30;
-    static constexpr std::uint32_t kWriterMask = kWriterHeld | kWriterPending;
-    static constexpr std::uint32_t kReaderMask = ~(kWriterMask);
+    static constexpr uint32_t kWriterHeld = 1u << 31;
+    static constexpr uint32_t kWriterPending = 1u << 30;
+    static constexpr uint32_t kWriterMask = kWriterHeld | kWriterPending;
+    static constexpr uint32_t kReaderMask = ~(kWriterMask);
 
-    std::atomic<std::uint32_t> state_{0};
+    std::atomic<uint32_t> state_{0};
 };
 
 class SharedSpinLockGuard final {

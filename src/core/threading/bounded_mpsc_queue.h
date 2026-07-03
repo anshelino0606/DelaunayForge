@@ -8,7 +8,7 @@ namespace fem::threading {
 
 class BoundedMPSCQueue final {
 public:
-    explicit BoundedMPSCQueue(std::size_t capacity_pow2);
+    explicit BoundedMPSCQueue(std::size_t capacity_pow2) noexcept;
     ~BoundedMPSCQueue();
 
     BoundedMPSCQueue(const BoundedMPSCQueue&) = delete;

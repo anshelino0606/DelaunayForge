@@ -16,12 +16,15 @@ function(fem_add_thread_pool_tests)
   set(thread_pool_test_cases
     schedule_and_wait_idle
     submit_returns_values
+    submit_result_preserves_status_after_take
+    schedule_reports_shutdown_failure
+    submit_reports_shutdown_failure
     parallel_for_covers_all_ranges
     parallel_for_move_only_body
-    parallel_for_propagates_exception
+    parallel_for_keeps_pool_reusable
     nested_scheduling
     spin_rw_lock_parallel_readers
-    detached_exception_handler_invoked
+    small_pool_processes_detached_tasks
     large_callable_fallback_allocation
     stress_many_external_producers
     stress_parallel_for_large_range

@@ -8,7 +8,7 @@ namespace fem::threading {
 
 class WorkStealingDeque final {
 public:
-    explicit WorkStealingDeque(std::size_t capacity_pow2);
+    explicit WorkStealingDeque(std::size_t capacity_pow2) noexcept;
     ~WorkStealingDeque();
 
     WorkStealingDeque(const WorkStealingDeque&) = delete;

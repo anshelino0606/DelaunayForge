@@ -1,5 +1,6 @@
 #include "spin_rw_lock.h"
 
+#include "core/macro.h"
 #include "threading_constants.h"
 
 #include <thread>
@@ -7,23 +8,9 @@
 namespace fem::threading {
 namespace {
 
-inline void cpu_relax() noexcept {
-#if defined(__clang__) || defined(__GNUC__)
-  #if defined(__i386__) || defined(__x86_64__)
-    __builtin_ia32_pause();
-  #elif defined(__aarch64__) || defined(__arm__)
-    __asm__ __volatile__("yield");
-  #else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-  #endif
-#else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-#endif
-}
-
 inline void backoff_relax(std::size_t spins) noexcept {
     if (spins < constants::kSpinPauseThreshold) {
-        cpu_relax();
+        FEM_CPU_RELAX();
         return;
     }
 

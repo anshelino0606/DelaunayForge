@@ -1,34 +1,22 @@
 #include "thread_pool.h"
 
 #include "bounded_mpsc_queue.h"
+#include "core/macro.h"
 #include "task_pool_allocator.h"
+#include "threading_log.h"
 #include "threading_constants.h"
 #include "work_stealing_deque.h"
 
+#include <pthread.h>
 #include <thread>
-#include <vector>
 
 namespace fem::threading {
 
 namespace {
 
-inline void cpu_relax() noexcept {
-#if defined(__clang__) || defined(__GNUC__)
-  #if defined(__i386__) || defined(__x86_64__)
-    __builtin_ia32_pause();
-  #elif defined(__aarch64__) || defined(__arm__)
-    __asm__ __volatile__("yield");
-  #else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-  #endif
-#else
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-#endif
-}
-
 inline void backoff_relax(std::size_t spins) noexcept {
     if (spins < constants::kSpinPauseThreshold) {
-        cpu_relax();
+        FEM_CPU_RELAX();
         return;
     }
 
@@ -44,41 +32,64 @@ struct ThreadPool::Impl {
         ThreadPool* owner_in,
         std::size_t worker_count,
         std::size_t local_capacity,
-        std::size_t remote_capacity,
-        UnhandledExceptionHandler unhandled_exception_handler_in
+        std::size_t remote_capacity
     )
         : owner(owner_in)
         , local_queue_capacity(local_capacity)
         , remote_queue_capacity(remote_capacity)
         , task_allocator(constants::kTaskPoolBlockSize, constants::kTaskPoolBlocksPerSlab)
-        , unhandled_exception_handler(
-            unhandled_exception_handler_in != nullptr
-                ? unhandled_exception_handler_in
-                : &ThreadPool::terminate_on_unhandled_exception_) {
-        workers.reserve(worker_count);
-        for (std::size_t index = 0; index < worker_count; ++index) {
-            workers.push_back(std::make_unique<Worker>(owner, this, index, local_queue_capacity, remote_queue_capacity));
+        , workers(new (std::nothrow) Worker*[worker_count]{})
+        , worker_count(worker_count) {
+        if (workers == nullptr) {
+            LOGT_ERROR(LogThreading, "ThreadPool::Impl::Impl(): failed to allocate worker table (count=%llu)",
+                static_cast<unsigned long long>(worker_count));
+            accepting_tasks.store(false, std::memory_order_release);
+            this->worker_count = 0;
+            return;
         }
 
-        try {
-            for (auto& worker : workers) {
-                worker->thread = std::thread([this, worker = worker.get()] {
-                    worker_loop(*worker);
-                });
+        for (std::size_t index = 0; index < worker_count; ++index) {
+            workers[index] = new (std::nothrow) Worker(owner, this, index, local_queue_capacity, remote_queue_capacity);
+            if (workers[index] == nullptr) {
+                LOGT_ERROR(LogThreading, "ThreadPool::Impl::Impl(): failed to allocate worker=%llu",
+                    static_cast<unsigned long long>(index));
+                this->worker_count = index;
+                accepting_tasks.store(false, std::memory_order_release);
+                destroy_workers();
+                return;
             }
-        } catch (...) {
-            accepting_tasks.store(false, std::memory_order_release);
-            signal_epoch.fetch_add(1, std::memory_order_release);
+        }
+
+        for (std::size_t index = 0; index < this->worker_count; ++index) {
+            Worker& worker = *workers[index];
+            const int create_result = ::pthread_create(&worker.thread, nullptr, &Impl::worker_entry_, &worker);
+            if (create_result != 0) {
+                LOGT_ERROR(LogThreading, "ThreadPool::Impl::Impl(): failed to start worker=%llu error=%d",
+                    static_cast<unsigned long long>(index),
+                    create_result);
+                this->worker_count = index + 1;
+                worker.thread_started = false;
+                accepting_tasks.store(false, std::memory_order_release);
+                signal_epoch.fetch_add(1, std::memory_order_release);
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-            signal_epoch.notify_all();
+                signal_epoch.notify_all();
 #endif
-            join_workers();
-            throw;
+                join_workers();
+                destroy_workers();
+                this->worker_count = 0;
+                return;
+            }
+            worker.thread_started = true;
         }
     }
 
+    ~Impl() {
+        join_workers();
+        destroy_workers();
+    }
+
     struct Worker final {
-        Worker(ThreadPool* owner_in, Impl* impl_in, std::size_t index_in, std::size_t local_capacity, std::size_t remote_capacity)
+        Worker(ThreadPool* owner_in, Impl* impl_in, std::size_t index_in, std::size_t local_capacity, std::size_t remote_capacity) noexcept
             : owner(owner_in)
             , impl(impl_in)
             , index(index_in)
@@ -92,15 +103,34 @@ struct ThreadPool::Impl {
         std::size_t task_cache_count = 0;
         WorkStealingDeque local_queue;
         BoundedMPSCQueue remote_queue;
-        std::thread thread;
+        pthread_t thread{};
+        bool thread_started = false;
     };
+
+    static void* worker_entry_(void* argument) noexcept {
+        auto* worker = static_cast<Worker*>(argument);
+        worker->impl->worker_loop(*worker);
+        return nullptr;
+    }
+
+    void destroy_workers() noexcept {
+        if (workers == nullptr) {
+            return;
+        }
+
+        for (std::size_t index = 0; index < worker_count; ++index) {
+            delete workers[index];
+            workers[index] = nullptr;
+        }
+        workers.reset();
+    }
 
     ThreadPool* owner = nullptr;
     std::size_t local_queue_capacity = 0;
     std::size_t remote_queue_capacity = 0;
     TaskPoolAllocator task_allocator;
-    std::vector<std::unique_ptr<Worker>> workers;
-    UnhandledExceptionHandler unhandled_exception_handler = nullptr;
+    std::unique_ptr<Worker*[]> workers;
+    std::size_t worker_count = 0;
     alignas(constants::kCacheLineSize) std::atomic<bool> accepting_tasks{true};
     alignas(constants::kCacheLineSize) std::atomic<std::size_t> pending_tasks{0};
     alignas(constants::kCacheLineSize) std::atomic<std::size_t> next_worker{0};
@@ -154,11 +184,11 @@ struct ThreadPool::Impl {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
             signal_epoch.wait(epoch, std::memory_order_relaxed);
 #else
-        backoff_relax(constants::kIdleBackoffSpins);
+            backoff_relax(constants::kIdleBackoffSpins);
 #endif
         }
 
-    flush_task_cache(self);
+        flush_task_cache(self);
 
         tls_worker = nullptr;
     }
@@ -173,7 +203,6 @@ struct ThreadPool::Impl {
             return static_cast<ThreadPool::TaskBase*>(remote);
         }
 
-        const std::size_t worker_count = workers.size();
         for (std::size_t offset = 1; offset < worker_count; ++offset) {
             Worker& victim = *workers[(self.index + offset) % worker_count];
             if (void* stolen = victim.local_queue.steal()) {
@@ -206,9 +235,15 @@ struct ThreadPool::Impl {
     }
 
     void join_workers() {
-        for (auto& worker : workers) {
-            if (worker->thread.joinable()) {
-                worker->thread.join();
+        if (workers == nullptr) {
+            return;
+        }
+
+        for (std::size_t index = 0; index < worker_count; ++index) {
+            Worker* worker = workers[index];
+            if (worker != nullptr && worker->thread_started) {
+                ::pthread_join(worker->thread, nullptr);
+                worker->thread_started = false;
             }
         }
     }
@@ -217,8 +252,7 @@ struct ThreadPool::Impl {
 ThreadPool::ThreadPool(
     std::size_t worker_count,
     std::size_t local_queue_capacity_pow2,
-    std::size_t remote_queue_capacity_pow2,
-    UnhandledExceptionHandler unhandled_exception_handler) {
+    std::size_t remote_queue_capacity_pow2) {
     if (worker_count == 0) {
         worker_count = std::thread::hardware_concurrency();
         if (worker_count == 0) {
@@ -226,12 +260,14 @@ ThreadPool::ThreadPool(
         }
     }
 
-    impl_ = std::make_unique<Impl>(
+    impl_.reset(new (std::nothrow) Impl(
         this,
         worker_count,
         local_queue_capacity_pow2,
-        remote_queue_capacity_pow2,
-        unhandled_exception_handler);
+        remote_queue_capacity_pow2));
+    if (impl_ == nullptr) {
+        LOGT_ERROR(LogThreading, "ThreadPool::ThreadPool(): failed to allocate implementation");
+    }
 }
 
 ThreadPool::~ThreadPool() {
@@ -239,21 +275,34 @@ ThreadPool::~ThreadPool() {
 }
 
 std::size_t ThreadPool::size() const noexcept {
-    return impl_ == nullptr ? 0 : impl_->workers.size();
+    return impl_ == nullptr ? 0 : impl_->worker_count;
 }
 
-bool ThreadPool::enqueue_owned_task_(TaskBase* task) {
-    if (enqueue_task_(task)) {
-        return true;
+ThreadPool::TaskSubmitStatus ThreadPool::enqueue_owned_task_(TaskBase* task) {
+    if (task == nullptr) {
+        return TaskSubmitStatus::pool_unavailable;
+    }
+
+    const TaskSubmitStatus status = enqueue_task_(task);
+    if (is_scheduled(status)) {
+        return status;
     }
 
     task->destroy(*this);
-    return false;
+    return status;
 }
 
-bool ThreadPool::enqueue_task_(TaskBase* task) {
+ThreadPool::TaskSubmitStatus ThreadPool::enqueue_task_(TaskBase* task) {
+    if (task == nullptr) {
+        return TaskSubmitStatus::pool_unavailable;
+    }
+
+    if (impl_ == nullptr) {
+        return TaskSubmitStatus::pool_unavailable;
+    }
+
     if (!impl_->accepting_tasks.load(std::memory_order_acquire)) {
-        return false;
+        return TaskSubmitStatus::pool_stopped;
     }
 
     impl_->pending_tasks.fetch_add(1, std::memory_order_release);
@@ -262,23 +311,23 @@ bool ThreadPool::enqueue_task_(TaskBase* task) {
     if (local != nullptr && local->owner == this) {
         if (local->local_queue.push_bottom(task) || local->remote_queue.try_push(task)) {
             impl_->signal_workers();
-            return true;
+            return TaskSubmitStatus::scheduled;
         }
 
         task->run(*this);
         impl_->finish_task();
         task->destroy(*this);
-        return true;
+        return TaskSubmitStatus::scheduled;
     }
 
     std::size_t start = impl_->next_worker.fetch_add(1, std::memory_order_relaxed);
     std::size_t spins = 0;
     while (impl_->accepting_tasks.load(std::memory_order_acquire)) {
-        for (std::size_t offset = 0; offset < impl_->workers.size(); ++offset) {
-            Impl::Worker& worker = *impl_->workers[(start + offset) % impl_->workers.size()];
+        for (std::size_t offset = 0; offset < impl_->worker_count; ++offset) {
+            Impl::Worker& worker = *impl_->workers[(start + offset) % impl_->worker_count];
             if (worker.remote_queue.try_push(task)) {
                 impl_->signal_workers();
-                return true;
+                return TaskSubmitStatus::scheduled;
             }
         }
 
@@ -287,10 +336,14 @@ bool ThreadPool::enqueue_task_(TaskBase* task) {
     }
 
     impl_->finish_task();
-    return false;
+    return TaskSubmitStatus::pool_stopped;
 }
 
 void ThreadPool::wait_idle() {
+    if (impl_ == nullptr) {
+        return;
+    }
+
     std::size_t pending = impl_->pending_tasks.load(std::memory_order_acquire);
     while (pending != 0) {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
@@ -303,6 +356,10 @@ void ThreadPool::wait_idle() {
 }
 
 void* ThreadPool::allocate_task_memory_(std::size_t size, std::size_t alignment) {
+    if (impl_ == nullptr) {
+        return nullptr;
+    }
+
     Impl::Worker* local = Impl::tls_worker;
     if (local != nullptr && local->owner == this && impl_->task_allocator.can_pool(size, alignment)) {
         if (local->task_cache == nullptr) {
@@ -324,6 +381,10 @@ void* ThreadPool::allocate_task_memory_(std::size_t size, std::size_t alignment)
 }
 
 void ThreadPool::deallocate_task_memory_(void* ptr, std::size_t size, std::size_t alignment) noexcept {
+    if (impl_ == nullptr) {
+        return;
+    }
+
     Impl::Worker* local = Impl::tls_worker;
     if (local != nullptr && local->owner == this && impl_->task_allocator.can_pool(size, alignment)) {
         auto* node = static_cast<TaskPoolAllocator::FreeNode*>(ptr);
@@ -342,18 +403,31 @@ void ThreadPool::deallocate_task_memory_(void* ptr, std::size_t size, std::size_
     impl_->task_allocator.deallocate(ptr, size, alignment);
 }
 
-void ThreadPool::handle_detached_task_exception_(std::exception_ptr exception) noexcept {
-    if (impl_ == nullptr || impl_->unhandled_exception_handler == nullptr) {
-        terminate_on_unhandled_exception_(exception);
+void ThreadPool::log_submit_failure_(TaskSubmitStatus status) noexcept {
+    const char* reason = "unknown failure";
+    bool expected_rejection = false;
+    switch (status) {
+    case TaskSubmitStatus::scheduled:
+        reason = "unexpected success";
+        break;
+    case TaskSubmitStatus::task_allocation_failed:
+        reason = "task allocation failed";
+        break;
+    case TaskSubmitStatus::pool_unavailable:
+        reason = "pool unavailable";
+        break;
+    case TaskSubmitStatus::pool_stopped:
+        reason = "pool stopped; task rejected";
+        expected_rejection = true;
+        break;
+    }
+
+    if (expected_rejection) {
+        LOGT_WARN(LogThreading, "ThreadPool::submit(): %s", reason);
         return;
     }
 
-    impl_->unhandled_exception_handler(exception);
-}
-
-void ThreadPool::terminate_on_unhandled_exception_(std::exception_ptr exception) noexcept {
-    (void)exception;
-    std::terminate();
+    LOGT_ERROR(LogThreading, "ThreadPool::submit(): %s", reason);
 }
 
 void ThreadPool::shutdown() {

@@ -1,6 +1,15 @@
 #ifndef FEM_CORE_MACRO_H
 #define FEM_CORE_MACRO_H
 
+#include <atomic>
+
+#if defined(_MSC_VER)
+  #include <intrin.h>
+  #if defined(_M_IX86) || defined(_M_X64)
+    #include <immintrin.h>
+  #endif
+#endif
+
 #define FEM_CONCAT_IMPL(x, y) x##y
 #define FEM_CONCAT(x, y) FEM_CONCAT_IMPL(x, y)
 
@@ -234,6 +243,26 @@
   #define FEM_RESTRICT __restrict__
 #else
   #define FEM_RESTRICT
+#endif
+
+#if defined(_MSC_VER)
+  #if defined(_M_IX86) || defined(_M_X64)
+    #define FEM_CPU_RELAX() _mm_pause()
+  #elif defined(_M_ARM) || defined(_M_ARM64)
+    #define FEM_CPU_RELAX() __yield()
+  #else
+    #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
+  #endif
+#elif defined(__clang__) || defined(__GNUC__)
+  #if defined(__i386__) || defined(__x86_64__)
+    #define FEM_CPU_RELAX() __builtin_ia32_pause()
+  #elif defined(__aarch64__) || defined(__arm__)
+    #define FEM_CPU_RELAX() __asm__ __volatile__("yield")
+  #else
+    #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
+  #endif
+#else
+  #define FEM_CPU_RELAX() std::atomic_signal_fence(std::memory_order_seq_cst)
 #endif
 
 

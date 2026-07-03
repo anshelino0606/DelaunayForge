@@ -1,20 +1,26 @@
 #include "thread_pool.h"
-#include "threading_constants.h"
 #include "spin_rw_lock.h"
+#include "threading_constants.h"
+#include "threading_log.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <memory>
-#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <vector>
 
 namespace {
+
+using fem::threading::LogThreading;
+using TaskSubmitStatus = fem::threading::ThreadPool::TaskSubmitStatus;
+
+bool is_scheduled(TaskSubmitStatus status) {
+    return fem::threading::ThreadPool::is_scheduled(status);
+}
 
 constexpr std::size_t kDefaultTestWorkerCount = 4;
 constexpr std::size_t kSmallTestWorkerCount = 2;
@@ -38,27 +44,16 @@ constexpr std::uint32_t kStressLargeRangeXorMask = 0x9e3779b9u;
 constexpr int kRecursiveRootTaskCount = 128;
 constexpr int kRecursiveBranchTaskCount = 32;
 constexpr std::size_t kRecursiveQueueCapacity = 256;
-constexpr std::size_t kExceptionTestQueueCapacity = 128;
 constexpr std::size_t kLargeCallablePadding = fem::threading::constants::kTaskPoolBlockSize + 64;
-
-std::atomic<int> g_unhandled_exception_count{0};
-    
-void count_unhandled_exception(std::exception_ptr exception) noexcept {
-    if (exception == nullptr) {
-        return;
-    }
-
-    g_unhandled_exception_count.fetch_add(1, std::memory_order_relaxed);
-}
 
 bool test_schedule_and_wait_idle() {
     fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
     std::atomic<int> counter{0};
 
     for (int index = 0; index < kScheduleTaskCount; ++index) {
-        if (!pool.schedule([&counter] {
+        if (!is_scheduled(pool.schedule([&counter]() noexcept {
                 counter.fetch_add(1, std::memory_order_relaxed);
-            })) {
+            }))) {
             return false;
         }
     }
@@ -73,9 +68,14 @@ bool test_submit_returns_values() {
     futures.reserve(kFutureTaskCount);
 
     for (int index = 0; index < kFutureTaskCount; ++index) {
-        futures.push_back(pool.submit([index] {
+        auto submit_result = pool.submit([index]() noexcept {
             return index * index;
-        }));
+        });
+        std::future<int> future;
+        if (!std::move(submit_result).try_take_future(future)) {
+            return false;
+        }
+        futures.push_back(std::move(future));
     }
 
     int sum = 0;
@@ -86,6 +86,61 @@ bool test_submit_returns_values() {
     return sum == 85344;
 }
 
+bool test_submit_result_preserves_status_after_take() {
+    fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+
+    auto submit_result = pool.submit([]() noexcept {
+        return 42;
+    });
+    if (!submit_result.scheduled() || submit_result.status() != TaskSubmitStatus::scheduled ||
+        !submit_result.future_available()) {
+        return false;
+    }
+
+    std::future<int> future;
+    if (!std::move(submit_result).try_take_future(future)) {
+        return false;
+    }
+
+    if (!submit_result.scheduled() || submit_result.status() != TaskSubmitStatus::scheduled ||
+        submit_result.future_available()) {
+        return false;
+    }
+
+    if (future.get() != 42) {
+        return false;
+    }
+
+    std::future<int> second_take;
+    return !std::move(submit_result).try_take_future(second_take);
+}
+
+bool test_schedule_reports_shutdown_failure() {
+    fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+    pool.shutdown();
+
+    return pool.schedule([]() noexcept {}) == TaskSubmitStatus::pool_stopped;
+}
+
+bool test_submit_reports_shutdown_failure() {
+    fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+    pool.shutdown();
+
+    auto submit_result = pool.submit([]() noexcept {
+        return 7;
+    });
+    if (submit_result.scheduled()) {
+        return false;
+    }
+
+    if (submit_result.status() != TaskSubmitStatus::pool_stopped) {
+        return false;
+    }
+
+    std::future<int> future;
+    return !std::move(submit_result).try_take_future(future);
+}
+
 bool test_parallel_for_covers_all_ranges() {
     fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
     std::vector<std::atomic<int>> counts(kParallelForCountSize);
@@ -93,7 +148,7 @@ bool test_parallel_for_covers_all_ranges() {
         count.store(0, std::memory_order_relaxed);
     }
 
-    pool.parallel_for<int>(0, static_cast<int>(counts.size()), kParallelForGrainSize, [&counts](int begin, int end) {
+    pool.parallel_for<int>(0, static_cast<int>(counts.size()), kParallelForGrainSize, [&counts](int begin, int end) noexcept {
         for (int index = begin; index < end; ++index) {
             counts[static_cast<std::size_t>(index)].fetch_add(1, std::memory_order_relaxed);
         }
@@ -114,7 +169,7 @@ bool test_parallel_for_move_only_body() {
     auto bias = std::make_unique<int>(7);
 
     pool.parallel_for<int>(0, static_cast<int>(values.size()), kParallelForGrainSize,
-        [&values, bias = std::move(bias)](int begin, int end) {
+        [&values, bias = std::move(bias)](int begin, int end) noexcept {
             for (int index = begin; index < end; ++index) {
                 values[static_cast<std::size_t>(index)] = index + *bias;
             }
@@ -129,56 +184,53 @@ bool test_parallel_for_move_only_body() {
     return true;
 }
 
-bool test_parallel_for_propagates_exception() {
+bool test_parallel_for_keeps_pool_reusable() {
     fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
+    std::atomic<int> touched{0};
     std::atomic<int> scheduled_after_exception{0};
 
-    try {
-        pool.parallel_for<int>(0, static_cast<int>(kParallelForCountSize), kParallelForGrainSize,
-            [](int begin, int end) {
-                if (begin <= 123 && 123 < end) {
-                    throw std::runtime_error("parallel_for failure");
-                }
+    pool.parallel_for<int>(0, static_cast<int>(kParallelForCountSize), kParallelForGrainSize,
+        [&touched](int begin, int end) noexcept {
+            for (int index = begin; index < end; ++index) {
+                touched.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
 
-                volatile int sink = 0;
-                for (int index = begin; index < end; ++index) {
-                    sink += index;
-                }
-                (void)sink;
-            });
-        return false;
-    } catch (const std::runtime_error&) {
-    }
-
-    if (!pool.schedule([&scheduled_after_exception] {
+    if (!is_scheduled(pool.schedule([&scheduled_after_exception]() noexcept {
             scheduled_after_exception.fetch_add(1, std::memory_order_relaxed);
-        })) {
+        }))) {
         return false;
     }
 
     pool.wait_idle();
-    return scheduled_after_exception.load(std::memory_order_relaxed) == 1;
+    return touched.load(std::memory_order_relaxed) == static_cast<int>(kParallelForCountSize) &&
+           scheduled_after_exception.load(std::memory_order_relaxed) == 1;
 }
 
 bool test_nested_scheduling() {
     fem::threading::ThreadPool pool(kDefaultTestWorkerCount);
     std::atomic<int> counter{0};
+    std::atomic<bool> child_schedule_failed{false};
 
     for (int index = 0; index < kNestedRootTaskCount; ++index) {
-        if (!pool.schedule([&pool, &counter] {
+        if (!is_scheduled(pool.schedule([&pool, &counter, &child_schedule_failed]() noexcept {
                 counter.fetch_add(1, std::memory_order_relaxed);
                 for (int child = 0; child < kNestedChildTaskCount; ++child) {
-                    pool.schedule([&counter] {
+                    if (!is_scheduled(pool.schedule([&counter]() noexcept {
                         counter.fetch_add(1, std::memory_order_relaxed);
-                    });
+                    }))) {
+                        child_schedule_failed.store(true, std::memory_order_release);
+                        return;
+                    }
                 }
-            })) {
+            }))) {
             return false;
         }
     }
 
     pool.wait_idle();
-    return counter.load(std::memory_order_relaxed) == kNestedRootTaskCount * (kNestedChildTaskCount + 1);
+    return !child_schedule_failed.load(std::memory_order_acquire) &&
+           counter.load(std::memory_order_relaxed) == kNestedRootTaskCount * (kNestedChildTaskCount + 1);
 }
 
 bool test_spin_rw_lock_allows_parallel_readers() {
@@ -251,15 +303,20 @@ bool test_stress_many_external_producers() {
     std::atomic<std::uint64_t> sum{0};
     std::vector<std::thread> producers;
     producers.reserve(kProducerCount);
+    std::atomic<bool> submit_failed{false};
 
     for (int producer = 0; producer < kProducerCount; ++producer) {
-        producers.emplace_back([producer, &pool, &sum] {
+        producers.emplace_back([producer, &pool, &sum, &submit_failed] {
             for (int task = 0; task < kTasksPerProducer; ++task) {
+                if (submit_failed.load(std::memory_order_acquire)) {
+                    return;
+                }
                 const std::uint64_t value = static_cast<std::uint64_t>(producer) * kTasksPerProducer + task + 1;
-                while (!pool.schedule([&sum, value] {
+                if (!is_scheduled(pool.schedule([&sum, value]() noexcept {
                     sum.fetch_add(value, std::memory_order_relaxed);
-                })) {
-                    std::this_thread::yield();
+                }))) {
+                    submit_failed.store(true, std::memory_order_release);
+                    return;
                 }
             }
         });
@@ -270,6 +327,10 @@ bool test_stress_many_external_producers() {
     }
 
     pool.wait_idle();
+
+    if (submit_failed.load(std::memory_order_acquire)) {
+        return false;
+    }
 
     const std::uint64_t total_tasks = static_cast<std::uint64_t>(kProducerCount) * kTasksPerProducer;
     const std::uint64_t expected_sum = total_tasks * (total_tasks + 1) / 2;
@@ -283,7 +344,7 @@ bool test_stress_parallel_for_large_range() {
         kStressLargeRangeLocalCapacity,
         kStressLargeRangeRemoteCapacity);
 
-    pool.parallel_for<std::size_t>(0, values.size(), kStressLargeRangeGrainSize, [&values](std::size_t begin, std::size_t end) {
+    pool.parallel_for<std::size_t>(0, values.size(), kStressLargeRangeGrainSize, [&values](std::size_t begin, std::size_t end) noexcept {
         for (std::size_t index = begin; index < end; ++index) {
             values[index] = static_cast<std::uint32_t>((index * kStressLargeRangeMultiplier) ^ kStressLargeRangeXorMask);
         }
@@ -307,40 +368,41 @@ bool test_stress_recursive_fan_out() {
         kRecursiveQueueCapacity,
         kRecursiveQueueCapacity);
     std::atomic<int> counter{0};
+    std::atomic<bool> child_schedule_failed{false};
 
     for (int root = 0; root < kRecursiveRootTaskCount; ++root) {
-        if (!pool.schedule([&pool, &counter] {
+        if (!is_scheduled(pool.schedule([&pool, &counter, &child_schedule_failed]() noexcept {
                 counter.fetch_add(1, std::memory_order_relaxed);
                 for (int branch = 0; branch < kRecursiveBranchTaskCount; ++branch) {
-                    pool.schedule([&counter] {
+                    if (!is_scheduled(pool.schedule([&counter]() noexcept {
                         counter.fetch_add(1, std::memory_order_relaxed);
-                    });
+                    }))) {
+                        child_schedule_failed.store(true, std::memory_order_release);
+                        return;
+                    }
                 }
-            })) {
+            }))) {
             return false;
         }
     }
 
     pool.wait_idle();
-    return counter.load(std::memory_order_relaxed) == kRecursiveRootTaskCount * (kRecursiveBranchTaskCount + 1);
+    return !child_schedule_failed.load(std::memory_order_acquire) &&
+           counter.load(std::memory_order_relaxed) == kRecursiveRootTaskCount * (kRecursiveBranchTaskCount + 1);
 }
 
-bool test_detached_exception_handler_invoked() {
-    g_unhandled_exception_count.store(0, std::memory_order_relaxed);
-    fem::threading::ThreadPool pool(
-        kSmallTestWorkerCount,
-        kExceptionTestQueueCapacity,
-        kExceptionTestQueueCapacity,
-        &count_unhandled_exception);
+bool test_small_pool_processes_detached_tasks() {
+    fem::threading::ThreadPool pool(kSmallTestWorkerCount);
+    std::atomic<int> counter{0};
 
-    if (!pool.schedule([] {
-            throw std::runtime_error("detached task failure");
-        })) {
+    if (!is_scheduled(pool.schedule([&counter]() noexcept {
+            counter.fetch_add(1, std::memory_order_relaxed);
+        }))) {
         return false;
     }
 
     pool.wait_idle();
-    return g_unhandled_exception_count.load(std::memory_order_relaxed) == 1;
+    return counter.load(std::memory_order_relaxed) == 1;
 }
 
 bool test_large_callable_fallback_allocation() {
@@ -348,7 +410,7 @@ bool test_large_callable_fallback_allocation() {
         std::array<std::byte, kLargeCallablePadding> payload{};
         std::atomic<int>* counter = nullptr;
 
-        void operator()() const {
+        void operator()() const noexcept {
             counter->fetch_add(1, std::memory_order_relaxed);
         }
     };
@@ -358,7 +420,7 @@ bool test_large_callable_fallback_allocation() {
     LargeCallable callable;
     callable.counter = &counter;
 
-    if (!pool.schedule(callable)) {
+    if (!is_scheduled(pool.schedule(callable))) {
         return false;
     }
 
@@ -377,12 +439,15 @@ int main(int argc, char** argv) {
     const TestCase tests[] = {
         {"schedule_and_wait_idle", &test_schedule_and_wait_idle},
         {"submit_returns_values", &test_submit_returns_values},
+        {"submit_result_preserves_status_after_take", &test_submit_result_preserves_status_after_take},
+        {"schedule_reports_shutdown_failure", &test_schedule_reports_shutdown_failure},
+        {"submit_reports_shutdown_failure", &test_submit_reports_shutdown_failure},
         {"parallel_for_covers_all_ranges", &test_parallel_for_covers_all_ranges},
         {"parallel_for_move_only_body", &test_parallel_for_move_only_body},
-        {"parallel_for_propagates_exception", &test_parallel_for_propagates_exception},
+        {"parallel_for_keeps_pool_reusable", &test_parallel_for_keeps_pool_reusable},
         {"nested_scheduling", &test_nested_scheduling},
         {"spin_rw_lock_parallel_readers", &test_spin_rw_lock_allows_parallel_readers},
-        {"detached_exception_handler_invoked", &test_detached_exception_handler_invoked},
+        {"small_pool_processes_detached_tasks", &test_small_pool_processes_detached_tasks},
         {"large_callable_fallback_allocation", &test_large_callable_fallback_allocation},
         {"stress_many_external_producers", &test_stress_many_external_producers},
         {"stress_parallel_for_large_range", &test_stress_parallel_for_large_range},
@@ -391,8 +456,9 @@ int main(int argc, char** argv) {
 
     if (argc == 2 && std::strcmp(argv[1], "--list") == 0) {
         for (const auto& test : tests) {
-            std::cout << test.name << '\n';
+            LOGT_INFO(LogThreading, "%s", test.name);
         }
+        logger::shutdown();
         return 0;
     }
 
@@ -401,21 +467,32 @@ int main(int argc, char** argv) {
         for (const auto& test : tests) {
             if (selected == test.name) {
                 const bool passed = test.run();
-                std::cout << (passed ? "PASS" : "FAIL") << " " << test.name << '\n';
+                if (passed) {
+                    LOGT_INFO(LogThreading, "PASS %s", test.name);
+                } else {
+                    LOGT_ERROR(LogThreading, "FAIL %s", test.name);
+                }
+                logger::shutdown();
                 return passed ? 0 : 1;
             }
         }
 
-        std::cerr << "Unknown test: " << argv[1] << '\n';
+        LOGT_ERROR(LogThreading, "Unknown test: %s", argv[1]);
+        logger::shutdown();
         return 2;
     }
 
     bool all_passed = true;
     for (const auto& test : tests) {
         const bool passed = test.run();
-        std::cout << (passed ? "PASS" : "FAIL") << " " << test.name << '\n';
+        if (passed) {
+            LOGT_INFO(LogThreading, "PASS %s", test.name);
+        } else {
+            LOGT_ERROR(LogThreading, "FAIL %s", test.name);
+        }
         all_passed = all_passed && passed;
     }
 
+    logger::shutdown();
     return all_passed ? 0 : 1;
 }

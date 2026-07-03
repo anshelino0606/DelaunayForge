@@ -1,4 +1,5 @@
 #include "thread_pool.h"
+#include "threading_log.h"
 #include "threading_constants.h"
 
 #include <array>
@@ -7,9 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
-#include <iomanip>
-#include <iostream>
 #include <numeric>
 #include <string_view>
 #include <thread>
@@ -17,7 +15,14 @@
 
 namespace {
 
+using fem::threading::LogThreading;
+using TaskSubmitStatus = fem::threading::ThreadPool::TaskSubmitStatus;
+
 using Clock = std::chrono::steady_clock;
+
+bool is_scheduled(TaskSubmitStatus status) {
+    return fem::threading::ThreadPool::is_scheduled(status);
+}
 
 struct BenchmarkConfig {
     std::size_t worker_count = 4;
@@ -37,6 +42,7 @@ struct BenchmarkResult {
     double seconds = 0.0;
     std::uint64_t operations = 0;
     const char* unit = "ops";
+    const char* error = nullptr;
 };
 
 constexpr std::size_t kProducerQueueCapacity = fem::threading::constants::kDefaultLocalQueueCapacity;
@@ -54,11 +60,27 @@ void print_result(const BenchmarkResult& result) {
         ? static_cast<double>(result.operations) / result.seconds
         : 0.0;
 
-    std::cout << std::left << std::setw(36) << result.name
-              << " time=" << std::fixed << std::setprecision(6) << result.seconds << "s"
-              << " throughput=" << std::fixed << std::setprecision(2) << throughput
-              << " " << result.unit << "/s"
-              << " count=" << result.operations << '\n';
+    LOGT_INFO(LogThreading,
+        "%-36s time=%.6fs throughput=%.2f %s/s count=%llu",
+        result.name,
+        result.seconds,
+        throughput,
+        result.unit,
+        static_cast<unsigned long long>(result.operations));
+}
+
+bool benchmark_failed(const BenchmarkResult& result) {
+    if (result.error == nullptr) {
+        return false;
+    }
+
+    LOGT_ERROR(LogThreading, "%s: %s", result.name, result.error);
+    return true;
+}
+
+int finish_benchmark_program(int exit_code) {
+    logger::shutdown();
+    return exit_code;
 }
 
 BenchmarkResult benchmark_schedule_small_tasks(const BenchmarkConfig& config) {
@@ -67,20 +89,20 @@ BenchmarkResult benchmark_schedule_small_tasks(const BenchmarkConfig& config) {
 
     const auto begin = Clock::now();
     for (std::size_t index = 0; index < config.schedule_iterations; ++index) {
-        if (!pool.schedule([&counter] {
+        if (!is_scheduled(pool.schedule([&counter]() noexcept {
                 counter.fetch_add(1, std::memory_order_relaxed);
-            })) {
-            throw std::runtime_error("schedule_small_tasks failed to enqueue task");
+            }))) {
+            return {"schedule_small_tasks", 0.0, config.schedule_iterations, "tasks", "failed to enqueue task"};
         }
     }
     pool.wait_idle();
     const auto end = Clock::now();
 
     if (counter.load(std::memory_order_relaxed) != config.schedule_iterations) {
-        throw std::runtime_error("schedule_small_tasks counter mismatch");
+        return {"schedule_small_tasks", elapsed_seconds(begin, end), config.schedule_iterations, "tasks", "counter mismatch"};
     }
 
-    return {"schedule_small_tasks", elapsed_seconds(begin, end), config.schedule_iterations, "tasks"};
+    return {"schedule_small_tasks", elapsed_seconds(begin, end), config.schedule_iterations, "tasks", nullptr};
 }
 
 BenchmarkResult benchmark_schedule_large_callables(const BenchmarkConfig& config) {
@@ -88,7 +110,7 @@ BenchmarkResult benchmark_schedule_large_callables(const BenchmarkConfig& config
         std::array<std::byte, kLargeCallablePadding> payload{};
         std::atomic<std::uint64_t>* counter = nullptr;
 
-        void operator()() const {
+        void operator()() const noexcept {
             counter->fetch_add(1, std::memory_order_relaxed);
         }
     };
@@ -100,18 +122,18 @@ BenchmarkResult benchmark_schedule_large_callables(const BenchmarkConfig& config
     for (std::size_t index = 0; index < config.large_callable_tasks; ++index) {
         LargeCallable callable;
         callable.counter = &counter;
-        if (!pool.schedule(callable)) {
-            throw std::runtime_error("schedule_large_callables failed to enqueue task");
+        if (!is_scheduled(pool.schedule(callable))) {
+            return {"schedule_large_callables", 0.0, config.large_callable_tasks, "tasks", "failed to enqueue task"};
         }
     }
     pool.wait_idle();
     const auto end = Clock::now();
 
     if (counter.load(std::memory_order_relaxed) != config.large_callable_tasks) {
-        throw std::runtime_error("schedule_large_callables counter mismatch");
+        return {"schedule_large_callables", elapsed_seconds(begin, end), config.large_callable_tasks, "tasks", "counter mismatch"};
     }
 
-    return {"schedule_large_callables", elapsed_seconds(begin, end), config.large_callable_tasks, "tasks"};
+    return {"schedule_large_callables", elapsed_seconds(begin, end), config.large_callable_tasks, "tasks", nullptr};
 }
 
 BenchmarkResult benchmark_external_producer_contention(const BenchmarkConfig& config) {
@@ -122,15 +144,21 @@ BenchmarkResult benchmark_external_producer_contention(const BenchmarkConfig& co
     std::atomic<std::uint64_t> counter{0};
     std::vector<std::thread> producers;
     producers.reserve(config.producer_count);
+    std::atomic<bool> submit_failed{false};
 
     const auto begin = Clock::now();
     for (std::size_t producer = 0; producer < config.producer_count; ++producer) {
-        producers.emplace_back([&pool, &counter, &config] {
+        producers.emplace_back([&pool, &counter, &config, &submit_failed] {
             for (std::size_t index = 0; index < config.producer_iterations; ++index) {
-                while (!pool.schedule([&counter] {
+                if (submit_failed.load(std::memory_order_acquire)) {
+                    return;
+                }
+
+                if (!is_scheduled(pool.schedule([&counter]() noexcept {
                     counter.fetch_add(1, std::memory_order_relaxed);
-                })) {
-                    std::this_thread::yield();
+                }))) {
+                    submit_failed.store(true, std::memory_order_release);
+                    return;
                 }
             }
         });
@@ -143,11 +171,15 @@ BenchmarkResult benchmark_external_producer_contention(const BenchmarkConfig& co
     const auto end = Clock::now();
 
     const std::uint64_t total_tasks = config.producer_count * config.producer_iterations;
-    if (counter.load(std::memory_order_relaxed) != total_tasks) {
-        throw std::runtime_error("external_producer_contention counter mismatch");
+    if (submit_failed.load(std::memory_order_acquire)) {
+        return {"external_producer_contention", elapsed_seconds(begin, end), total_tasks, "tasks", "failed to enqueue task"};
     }
 
-    return {"external_producer_contention", elapsed_seconds(begin, end), total_tasks, "tasks"};
+    if (counter.load(std::memory_order_relaxed) != total_tasks) {
+        return {"external_producer_contention", elapsed_seconds(begin, end), total_tasks, "tasks", "counter mismatch"};
+    }
+
+    return {"external_producer_contention", elapsed_seconds(begin, end), total_tasks, "tasks", nullptr};
 }
 
 BenchmarkResult benchmark_recursive_spawn_pressure(const BenchmarkConfig& config) {
@@ -156,29 +188,37 @@ BenchmarkResult benchmark_recursive_spawn_pressure(const BenchmarkConfig& config
         kRecursiveQueueCapacity,
         kRecursiveQueueCapacity);
     std::atomic<std::uint64_t> counter{0};
+    std::atomic<bool> child_schedule_failed{false};
 
     const auto begin = Clock::now();
     for (std::size_t root = 0; root < config.root_tasks; ++root) {
-        if (!pool.schedule([&pool, &counter, &config] {
+        if (!is_scheduled(pool.schedule([&pool, &counter, &config, &child_schedule_failed]() noexcept {
                 counter.fetch_add(1, std::memory_order_relaxed);
                 for (std::size_t branch = 0; branch < config.branch_tasks; ++branch) {
-                    pool.schedule([&counter] {
+                    if (!is_scheduled(pool.schedule([&counter]() noexcept {
                         counter.fetch_add(1, std::memory_order_relaxed);
-                    });
+                    }))) {
+                        child_schedule_failed.store(true, std::memory_order_release);
+                        return;
+                    }
                 }
-            })) {
-            throw std::runtime_error("recursive_spawn_pressure failed to enqueue root task");
+            }))) {
+            return {"recursive_spawn_pressure", 0.0, config.root_tasks * (config.branch_tasks + 1), "tasks", "failed to enqueue root task"};
         }
     }
     pool.wait_idle();
     const auto end = Clock::now();
 
     const std::uint64_t total_tasks = config.root_tasks * (config.branch_tasks + 1);
-    if (counter.load(std::memory_order_relaxed) != total_tasks) {
-        throw std::runtime_error("recursive_spawn_pressure counter mismatch");
+    if (child_schedule_failed.load(std::memory_order_acquire)) {
+        return {"recursive_spawn_pressure", elapsed_seconds(begin, end), total_tasks, "tasks", "failed to enqueue child task"};
     }
 
-    return {"recursive_spawn_pressure", elapsed_seconds(begin, end), total_tasks, "tasks"};
+    if (counter.load(std::memory_order_relaxed) != total_tasks) {
+        return {"recursive_spawn_pressure", elapsed_seconds(begin, end), total_tasks, "tasks", "counter mismatch"};
+    }
+
+    return {"recursive_spawn_pressure", elapsed_seconds(begin, end), total_tasks, "tasks", nullptr};
 }
 
 BenchmarkResult benchmark_parallel_for_contiguous(const BenchmarkConfig& config) {
@@ -186,7 +226,7 @@ BenchmarkResult benchmark_parallel_for_contiguous(const BenchmarkConfig& config)
     std::vector<std::uint32_t> values(config.element_count, 0);
 
     const auto begin = Clock::now();
-    pool.parallel_for<std::size_t>(0, values.size(), config.grain_size, [&values](std::size_t chunk_begin, std::size_t chunk_end) {
+    pool.parallel_for<std::size_t>(0, values.size(), config.grain_size, [&values](std::size_t chunk_begin, std::size_t chunk_end) noexcept {
         for (std::size_t index = chunk_begin; index < chunk_end; ++index) {
             values[index] = static_cast<std::uint32_t>((index * kDataPatternMultiplier) ^ kDataPatternXorMask);
         }
@@ -197,15 +237,15 @@ BenchmarkResult benchmark_parallel_for_contiguous(const BenchmarkConfig& config)
     for (std::size_t index = 0; index < values.size(); ++index) {
         const std::uint32_t expected = static_cast<std::uint32_t>((index * kDataPatternMultiplier) ^ kDataPatternXorMask);
         if (values[index] != expected) {
-            throw std::runtime_error("parallel_for_contiguous value mismatch");
+            return {"parallel_for_contiguous", elapsed_seconds(begin, end), values.size(), "elements", "value mismatch"};
         }
         checksum += values[index];
     }
     if (checksum == 0) {
-        throw std::runtime_error("parallel_for_contiguous checksum invalid");
+        return {"parallel_for_contiguous", elapsed_seconds(begin, end), values.size(), "elements", "checksum invalid"};
     }
 
-    return {"parallel_for_contiguous", elapsed_seconds(begin, end), values.size(), "elements"};
+    return {"parallel_for_contiguous", elapsed_seconds(begin, end), values.size(), "elements", nullptr};
 }
 
 BenchmarkResult benchmark_parallel_for_strided(const BenchmarkConfig& config) {
@@ -214,7 +254,7 @@ BenchmarkResult benchmark_parallel_for_strided(const BenchmarkConfig& config) {
     const std::size_t stride = config.stride == 0 ? 1 : config.stride;
 
     const auto begin = Clock::now();
-    pool.parallel_for<std::size_t>(0, stride, 1, [&values, stride](std::size_t chunk_begin, std::size_t chunk_end) {
+    pool.parallel_for<std::size_t>(0, stride, 1, [&values, stride](std::size_t chunk_begin, std::size_t chunk_end) noexcept {
         for (std::size_t lane = chunk_begin; lane < chunk_end; ++lane) {
             for (std::size_t index = lane; index < values.size(); index += stride) {
                 values[index] = static_cast<std::uint32_t>((index * kDataPatternMultiplier) ^ kDataPatternXorMask);
@@ -227,15 +267,15 @@ BenchmarkResult benchmark_parallel_for_strided(const BenchmarkConfig& config) {
     for (std::size_t index = 0; index < values.size(); ++index) {
         const std::uint32_t expected = static_cast<std::uint32_t>((index * kDataPatternMultiplier) ^ kDataPatternXorMask);
         if (values[index] != expected) {
-            throw std::runtime_error("parallel_for_strided value mismatch");
+            return {"parallel_for_strided", elapsed_seconds(begin, end), values.size(), "elements", "value mismatch"};
         }
         checksum += values[index];
     }
     if (checksum == 0) {
-        throw std::runtime_error("parallel_for_strided checksum invalid");
+        return {"parallel_for_strided", elapsed_seconds(begin, end), values.size(), "elements", "checksum invalid"};
     }
 
-    return {"parallel_for_strided", elapsed_seconds(begin, end), values.size(), "elements"};
+    return {"parallel_for_strided", elapsed_seconds(begin, end), values.size(), "elements", nullptr};
 }
 
 using BenchmarkFn = BenchmarkResult (*)(const BenchmarkConfig&);
@@ -269,7 +309,7 @@ BenchmarkConfig make_smoke_config() {
 }
 
 void print_usage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [--list] [--smoke] [benchmark_name]\n";
+    LOGT_INFO(LogThreading, "Usage: %s [--list] [--smoke] [benchmark_name]", program_name);
 }
 
 } // namespace
@@ -282,9 +322,9 @@ int main(int argc, char** argv) {
         const std::string_view arg = argv[index];
         if (arg == "--list") {
             for (const auto& benchmark : kBenchmarks) {
-                std::cout << benchmark.name << '\n';
+                LOGT_INFO(LogThreading, "%s", benchmark.name);
             }
-            return 0;
+            return finish_benchmark_program(0);
         }
 
         if (arg == "--smoke") {
@@ -294,31 +334,35 @@ int main(int argc, char** argv) {
 
         if (!arg.empty() && arg.front() == '-') {
             print_usage(argv[0]);
-            return 2;
+            return finish_benchmark_program(2);
         }
 
         selected_name = argv[index];
     }
 
-    try {
-        if (selected_name != nullptr) {
-            for (const auto& benchmark : kBenchmarks) {
-                if (std::string_view(selected_name) == benchmark.name) {
-                    print_result(benchmark.run(config));
-                    return 0;
-                }
-            }
-
-            std::cerr << "Unknown benchmark: " << selected_name << '\n';
-            return 2;
-        }
-
+    if (selected_name != nullptr) {
         for (const auto& benchmark : kBenchmarks) {
-            print_result(benchmark.run(config));
+            if (std::string_view(selected_name) == benchmark.name) {
+                const BenchmarkResult result = benchmark.run(config);
+                if (benchmark_failed(result)) {
+                    return finish_benchmark_program(1);
+                }
+                print_result(result);
+                return finish_benchmark_program(0);
+            }
         }
-        return 0;
-    } catch (const std::exception& exception) {
-        std::cerr << "Benchmark failure: " << exception.what() << '\n';
-        return 1;
+
+        LOGT_ERROR(LogThreading, "Unknown benchmark: %s", selected_name);
+        return finish_benchmark_program(2);
     }
+
+    for (const auto& benchmark : kBenchmarks) {
+        const BenchmarkResult result = benchmark.run(config);
+        if (benchmark_failed(result)) {
+            return finish_benchmark_program(1);
+        }
+        print_result(result);
+    }
+
+    return finish_benchmark_program(0);
 }
