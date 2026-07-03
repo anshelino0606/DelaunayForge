@@ -71,9 +71,7 @@ struct ThreadPool::Impl {
                 worker.thread_started = false;
                 accepting_tasks.store(false, std::memory_order_release);
                 signal_epoch.fetch_add(1, std::memory_order_release);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-                signal_epoch.notify_all();
-#endif
+                FEM_ATOMIC_NOTIFY_ALL(signal_epoch);
                 join_workers();
                 destroy_workers();
                 this->worker_count = 0;
@@ -181,11 +179,7 @@ struct ThreadPool::Impl {
                 break;
             }
 
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-            signal_epoch.wait(epoch, std::memory_order_relaxed);
-#else
-            backoff_relax(constants::kIdleBackoffSpins);
-#endif
+            FEM_ATOMIC_WAIT_OR(signal_epoch, epoch, std::memory_order_relaxed, backoff_relax(constants::kIdleBackoffSpins));
         }
 
         flush_task_cache(self);
@@ -215,23 +209,17 @@ struct ThreadPool::Impl {
 
     void finish_task() {
         pending_tasks.fetch_sub(1, std::memory_order_acq_rel);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-        pending_tasks.notify_all();
-#endif
+        FEM_ATOMIC_NOTIFY_ALL(pending_tasks);
 
         if (pending_tasks.load(std::memory_order_acquire) == 0) {
             signal_epoch.fetch_add(1, std::memory_order_release);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-            signal_epoch.notify_all();
-#endif
+            FEM_ATOMIC_NOTIFY_ALL(signal_epoch);
         }
     }
 
     void signal_workers() {
         signal_epoch.fetch_add(1, std::memory_order_release);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-        signal_epoch.notify_one();
-#endif
+        FEM_ATOMIC_NOTIFY_ONE(signal_epoch);
     }
 
     void join_workers() {
@@ -346,11 +334,7 @@ void ThreadPool::wait_idle() {
 
     std::size_t pending = impl_->pending_tasks.load(std::memory_order_acquire);
     while (pending != 0) {
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-        impl_->pending_tasks.wait(pending, std::memory_order_relaxed);
-#else
-        backoff_relax(constants::kIdleBackoffSpins);
-#endif
+        FEM_ATOMIC_WAIT_OR(impl_->pending_tasks, pending, std::memory_order_relaxed, backoff_relax(constants::kIdleBackoffSpins));
         pending = impl_->pending_tasks.load(std::memory_order_acquire);
     }
 }
@@ -446,9 +430,7 @@ void ThreadPool::shutdown() {
     }
 
     impl_->signal_epoch.fetch_add(1, std::memory_order_release);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-    impl_->signal_epoch.notify_all();
-#endif
+    FEM_ATOMIC_NOTIFY_ALL(impl_->signal_epoch);
 
     impl_->join_workers();
 }

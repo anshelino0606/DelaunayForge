@@ -1,6 +1,7 @@
 #ifndef FEM_CORE_THREADING_THREAD_POOL_H
 #define FEM_CORE_THREADING_THREAD_POOL_H
 
+#include "core/macro.h"
 #include "threading_constants.h"
 
 #include <atomic>
@@ -171,10 +172,7 @@ public:
             if (!is_scheduled(schedule([&consume, &pending, &wake]() noexcept {
                     consume();
                     pending.fetch_sub(1, std::memory_order_acq_rel);
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-                    wake.fetch_add(1, std::memory_order_release);
-                    wake.notify_one();
-#endif
+                    FEM_ATOMIC_BUMP_AND_NOTIFY_ONE(wake, std::memory_order_release);
                 }))) {
                 pending.fetch_sub(1, std::memory_order_acq_rel);
             }
@@ -183,15 +181,11 @@ public:
         consume();
 
         while (pending.load(std::memory_order_acquire) != 0) {
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
             const std::size_t ticket = wake.load(std::memory_order_acquire);
             if (pending.load(std::memory_order_acquire) == 0) {
                 break;
             }
-            wake.wait(ticket, std::memory_order_relaxed);
-#else
-            std::this_thread::yield();
-#endif
+            FEM_ATOMIC_WAIT_OR(wake, ticket, std::memory_order_relaxed, std::this_thread::yield());
         }
     }
 

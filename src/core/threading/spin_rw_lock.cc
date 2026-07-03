@@ -17,15 +17,6 @@ inline void backoff_relax(std::size_t spins) noexcept {
     std::this_thread::yield();
 }
 
-template <class T>
-inline void atomic_notify_all(std::atomic<T>& value) noexcept {
-#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L
-    value.notify_all();
-#else
-    (void)value;
-#endif
-}
-
 } // namespace
 
 void SpinRWLock::lock_shared() noexcept {
@@ -66,7 +57,7 @@ bool SpinRWLock::try_lock_shared() noexcept {
 void SpinRWLock::unlock_shared() noexcept {
     const std::uint32_t previous = state_.fetch_sub(1, std::memory_order_release);
     if ((previous & kWriterPending) != 0) {
-        atomic_notify_all(state_);
+        FEM_ATOMIC_NOTIFY_ALL(state_);
     }
 }
 
@@ -120,7 +111,7 @@ bool SpinRWLock::try_lock() noexcept {
 
 void SpinRWLock::unlock() noexcept {
     state_.store(0, std::memory_order_release);
-    atomic_notify_all(state_);
+    FEM_ATOMIC_NOTIFY_ALL(state_);
 }
 
 SharedSpinLockGuard::SharedSpinLockGuard(SpinRWLock& lock) noexcept : lock_(lock) {
