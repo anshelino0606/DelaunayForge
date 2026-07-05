@@ -13,12 +13,14 @@ using Session = slang::ISession;
 
 using Module = slang::IModule;
 using EntryPoint = slang::IEntryPoint;
+using EntryPointRefl = slang::EntryPointReflection;
 using ProgramComponent = slang::IComponentType;
 using ComposedProgram = slang::IComponentType;
 using LinkedProgram = slang::IComponentType;
 using CompiledBlob = slang::IBlob;
 using IRBlob = slang::IBlob;
 using DiagnosticsBlob = slang::IBlob;
+using ProgramLayout = slang::ProgramLayout;
 
 struct LoadedModuleInfo {
     ComPtr<Module> module = nullptr;

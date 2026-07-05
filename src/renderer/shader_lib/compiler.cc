@@ -1,5 +1,6 @@
 #include "compiler.h"
 #include "utils.h"
+#include "compilation_session.h"
 #include "log_categories.h"
 
 namespace fem::shaderlib::compiler {

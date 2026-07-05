@@ -1,10 +1,14 @@
 #include "compilation_context.h"
 #include "compiler.h"
+#include "utils.h"
+#include "vector_blob.h"
 #include "log_categories.h"
+#include "core/file_system/file_system.h"
 
 namespace fem::shaderlib {
 
 CompilationContext::CompilationContext(const BaseShaderProgramCreateInfo& create_info) {
+    relative_path_ = create_info.relative_path;
     loaded_module_info_ = compiler::load_module(create_info.relative_path);
 }
 
@@ -18,7 +22,11 @@ void CompilationContext::compile() {
     link_program();
 
     for (uint32_t i = 0; i != entry_points_.size(); ++i) {
-        compiled_shaders_.push_back(compiler::compile_shader(linked_program_, i));
+        if (loaded_module_info_.is_cache_valid) {
+            load_shader_from_cache(i);
+        } else {
+            compile_and_cache_shader(i);
+        }
     }
 }
 
@@ -45,6 +53,39 @@ void CompilationContext::link_program() {
 
     ComPtr<ComposedProgram> composed_program = compiler::compose_program(components.data(), components.size());
     linked_program_ = compiler::link_program(composed_program);
+}
+
+void CompilationContext::compile_and_cache_shader(uint32_t entry_point_idx) {
+    ComPtr<CompiledBlob> bin_blob = compiler::compile_shader(linked_program_, entry_point_idx);
+
+    std::string shader_bin_relative_path = get_shader_bin_relative_path(entry_point_idx);
+    std::string shader_bin_absolute_path = get_and_prepare_cached_shader_bin_path(shader_bin_relative_path);
+    FileSystem::write(
+        shader_bin_absolute_path,
+        static_cast<const uint8_t*>(bin_blob->getBufferPointer()),
+        bin_blob->getBufferSize()
+    );
+
+    compiled_shaders_.push_back(bin_blob);
+}
+
+void CompilationContext::load_shader_from_cache(uint32_t entry_point_idx) {
+    std::string shader_bin_relative_path = get_shader_bin_relative_path(entry_point_idx);
+    std::string shader_bin_absolute_path = get_cached_shader_bin_path(shader_bin_relative_path);
+
+    std::vector<uint8_t> shader_bin_data;
+    FileSystem::read(shader_bin_absolute_path, shader_bin_data);
+
+    ComPtr<CompiledBlob> bin_blob;
+    bin_blob.attach(new VectorBlob(std::move(shader_bin_data)));
+
+    compiled_shaders_.push_back(bin_blob);
+}
+
+std::string CompilationContext::get_shader_bin_relative_path(uint32_t entry_point_idx) {
+    ProgramLayout* program_layout = linked_program_->getLayout();
+    EntryPointRefl* entry_point_refl = program_layout->getEntryPointByIndex(entry_point_idx);
+    return std::format("{}_{}", relative_path_, entry_point_refl->getName());
 }
 
 }

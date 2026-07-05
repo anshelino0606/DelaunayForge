@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.h"
-#include "compilation_session.h"
 
 #include <slang.h>
 #include <slang-com-ptr.h>
