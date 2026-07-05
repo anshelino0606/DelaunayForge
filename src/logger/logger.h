@@ -1,7 +1,7 @@
 #ifndef LOGGER
 #define LOGGER
 
-#include "mpsc_queue.h"
+#include "core/threading/mpsc_queue.h"
 
 #include <atomic>
 #include <cstdint>
@@ -16,6 +16,8 @@
 #include "logger_sink_fd.h"
 
 namespace logger {
+
+namespace mpsc = fem::threading;
 
 enum class Level : uint8_t { Debug, Info, Warn, Error };
 

@@ -1,7 +1,7 @@
 #ifndef ALLOCATOR_SERVICE
 #define ALLOCATOR_SERVICE
 
-#include "mpsc_queue.h"
+#include "core/threading/mpsc_queue.h"
 
 #include <atomic>
 #include <cstdint>
