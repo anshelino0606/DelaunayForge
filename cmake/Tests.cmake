@@ -1,6 +1,8 @@
 include_guard(GLOBAL)
 
 function(fem_add_thread_pool_tests)
+  find_package(Threads REQUIRED)
+
   add_executable(thread_pool_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool_tests.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool.cc
@@ -11,7 +13,7 @@ function(fem_add_thread_pool_tests)
   )
 
   fem_target_common_includes(thread_pool_tests)
-  target_link_libraries(thread_pool_tests PRIVATE pthread)
+  target_link_libraries(thread_pool_tests PRIVATE Threads::Threads)
 
   set(thread_pool_test_cases
     schedule_and_wait_idle
@@ -45,7 +47,7 @@ function(fem_add_thread_pool_tests)
   )
 
   fem_target_common_includes(thread_pool_benchmarks)
-  target_link_libraries(thread_pool_benchmarks PRIVATE pthread)
+  target_link_libraries(thread_pool_benchmarks PRIVATE Threads::Threads)
 
   add_test(
     NAME thread_pool_perf_smoke
