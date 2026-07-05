@@ -1,13 +1,13 @@
 #include "thread_pool.h"
 
-#include "bounded_mpsc_queue.h"
+#include "mpsc_queue.h"
 #include "core/macro.h"
 #include "task_pool_allocator.h"
 #include "threading_log.h"
 #include "threading_constants.h"
 #include "work_stealing_deque.h"
 
-#include <pthread.h>
+#include <system_error>
 #include <thread>
 
 namespace fem::threading {
@@ -62,13 +62,7 @@ struct ThreadPool::Impl {
 
         for (std::size_t index = 0; index < this->worker_count; ++index) {
             Worker& worker = *workers[index];
-            const int create_result = ::pthread_create(&worker.thread, nullptr, &Impl::worker_entry_, &worker);
-            if (create_result != 0) {
-                LOGT_ERROR(LogThreading, "ThreadPool::Impl::Impl(): failed to start worker=%llu error=%d",
-                    static_cast<unsigned long long>(index),
-                    create_result);
-                this->worker_count = index + 1;
-                worker.thread_started = false;
+            if (!start_worker_thread_(worker, index)) {
                 accepting_tasks.store(false, std::memory_order_release);
                 signal_epoch.fetch_add(1, std::memory_order_release);
                 FEM_ATOMIC_NOTIFY_ALL(signal_epoch);
@@ -77,7 +71,6 @@ struct ThreadPool::Impl {
                 this->worker_count = 0;
                 return;
             }
-            worker.thread_started = true;
         }
     }
 
@@ -100,15 +93,31 @@ struct ThreadPool::Impl {
         TaskPoolAllocator::FreeNode* task_cache = nullptr;
         std::size_t task_cache_count = 0;
         WorkStealingDeque local_queue;
-        BoundedMPSCQueue remote_queue;
-        pthread_t thread{};
-        bool thread_started = false;
+        DynamicBoundedMPSC remote_queue;
+        std::thread thread;
     };
 
-    static void* worker_entry_(void* argument) noexcept {
-        auto* worker = static_cast<Worker*>(argument);
+    static void worker_entry_(Worker* worker) noexcept {
         worker->impl->worker_loop(*worker);
-        return nullptr;
+    }
+
+    bool start_worker_thread_(Worker& worker, std::size_t index) noexcept {
+        try {
+            worker.thread = std::thread(&Impl::worker_entry_, &worker);
+            return true;
+        } catch (const std::system_error& error) {
+            LOGT_ERROR(LogThreading,
+                "ThreadPool::Impl::Impl(): failed to start worker=%llu error=%d message=%s",
+                static_cast<unsigned long long>(index),
+                error.code().value(),
+                error.what());
+        } catch (...) {
+            LOGT_ERROR(LogThreading,
+                "ThreadPool::Impl::Impl(): failed to start worker=%llu with unknown exception",
+                static_cast<unsigned long long>(index));
+        }
+
+        return false;
     }
 
     void destroy_workers() noexcept {
@@ -229,9 +238,8 @@ struct ThreadPool::Impl {
 
         for (std::size_t index = 0; index < worker_count; ++index) {
             Worker* worker = workers[index];
-            if (worker != nullptr && worker->thread_started) {
-                ::pthread_join(worker->thread, nullptr);
-                worker->thread_started = false;
+            if (worker != nullptr && worker->thread.joinable()) {
+                worker->thread.join();
             }
         }
     }
