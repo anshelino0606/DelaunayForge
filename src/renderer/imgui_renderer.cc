@@ -1,5 +1,5 @@
 #include "imgui_renderer.h"
-#include "shader_lib/shader_manager.h"
+#include "rhi/shader_manager.h"
 #include "log_categories.h"
 #include "core/file_system/file_system.h"
 #include "renderer/device.h"

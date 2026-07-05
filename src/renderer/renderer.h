@@ -2,7 +2,7 @@
 #define FEM_RENDERER_H
 
 #include "common.h"
-#include "shader_lib/shader_manager.h"
+#include "rhi/shader_manager.h"
 #include "geom/delaunay_mesh_generator.h"
 #include <functional>
 

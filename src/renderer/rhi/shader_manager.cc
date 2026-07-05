@@ -1,15 +1,15 @@
 #include "shader_manager.h"
-#include "shader_compiler.h"
+#include "renderer/shader_lib/compiler.h"
 
 namespace fem {
 
 ShaderManager::ShaderManager() {
-    ShaderCompiler::init();
+    shaderlib::compiler::init();
 }
 
 ShaderManager::~ShaderManager() {
     graphics_shader_programs_.clear();
-    ShaderCompiler::shutdown();
+    shaderlib::compiler::shutdown();
 }
 
 GraphicsShaderProgram* ShaderManager::graphics_shader_program(const GraphicsShaderProgramCreateInfo& create_info) {

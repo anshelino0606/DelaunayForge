@@ -3,6 +3,7 @@ build-*/
 build-xcode/
 out/
 bin/
+intermediate/
 
 CMakeFiles/
 

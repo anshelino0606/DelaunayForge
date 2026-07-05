@@ -1,5 +1,5 @@
 #include "graphics_shader_program.h"
-#include "shader_compilation_context.h"
+#include "renderer/shader_lib/compilation_context.h"
 #include "renderer/device.h"
 #include "core/utils.h"
 
@@ -13,13 +13,13 @@ void GraphicsShaderProgram::create(const GraphicsShaderProgramCreateInfo& create
     const char* vertex_entry_point_name = create_info.vertex_entry_point.c_str();
     const char* fragment_entry_point_name = create_info.fragment_entry_point.c_str();
 
-    ShaderCompilationContext compilation_context(create_info);
+    shaderlib::CompilationContext compilation_context(create_info);
     compilation_context.add_entry_point(vertex_entry_point_name);
     compilation_context.add_entry_point(fragment_entry_point_name);
     compilation_context.compile();
 
-    ShaderCompilationResult vs_compilation_result = compilation_context.get_compiled_shader(0);
-    ShaderCompilationResult fs_compilation_result = compilation_context.get_compiled_shader(1);
+    shaderlib::CompilationResult vs_compilation_result = compilation_context.get_compiled_shader(0);
+    shaderlib::CompilationResult fs_compilation_result = compilation_context.get_compiled_shader(1);
 
     vertex_shader_.create(Shader::InitInfo{
         .data = vs_compilation_result.binary,
