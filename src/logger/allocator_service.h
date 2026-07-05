@@ -119,7 +119,7 @@ public:
         AllocatorService* service_{nullptr};
         CallerId id_{0};
         std::atomic<RequestId> next_id_{1};
-        mpsc::BoundedMPSC<Response, InboxCapPow2> inbox_{};
+        mpsc::StaticBoundedMPSC<Response, InboxCapPow2> inbox_{};
     };
 
     AllocatorService()
@@ -163,7 +163,7 @@ public:
     logger::Logger<LogQCapPow2, 256, true>& logger() { return logger_; }
 
 private:
-    using Inbox = logger::mpsc::BoundedMPSC<Response, InboxCapPow2>;
+    using Inbox = logger::mpsc::StaticBoundedMPSC<Response, InboxCapPow2>;
 
     void enqueue_request_with_backoff_(const Request& r) {
         for (int spins = 0; spins < 500; ++spins) {
@@ -255,7 +255,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<CallerId> next_caller_id_{1};
 
-    logger::mpsc::BoundedMPSC<Request, ReqQCapPow2> req_q_{};
+    logger::mpsc::StaticBoundedMPSC<Request, ReqQCapPow2> req_q_{};
     
     std::vector<std::atomic<Inbox*>> caller_inboxes_;
 

@@ -1,6 +1,6 @@
 #include "thread_pool.h"
 
-#include "bounded_mpsc_queue.h"
+#include "mpsc_queue.h"
 #include "core/macro.h"
 #include "task_pool_allocator.h"
 #include "threading_log.h"
@@ -93,7 +93,7 @@ struct ThreadPool::Impl {
         TaskPoolAllocator::FreeNode* task_cache = nullptr;
         std::size_t task_cache_count = 0;
         WorkStealingDeque local_queue;
-        BoundedMPSCQueue remote_queue;
+        DynamicBoundedMPSC remote_queue;
         std::thread thread;
     };
 

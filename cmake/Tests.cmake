@@ -8,7 +8,7 @@ function(fem_add_thread_pool_tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/task_pool_allocator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/work_stealing_deque.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/bounded_mpsc_queue.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/mpsc_queue.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/spin_rw_lock.cc
   )
 
@@ -42,7 +42,7 @@ function(fem_add_thread_pool_tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/thread_pool.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/task_pool_allocator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/work_stealing_deque.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/bounded_mpsc_queue.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/mpsc_queue.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading/spin_rw_lock.cc
   )
 

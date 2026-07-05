@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <new>
 #include <utility>
 
@@ -12,7 +13,7 @@ namespace fem::threading {
 inline constexpr std::size_t kCacheLine = 64;
 
 template <class T, std::size_t CapacityPow2>
-class BoundedMPSC {
+class StaticBoundedMPSC {
     static_assert((CapacityPow2 & (CapacityPow2 - 1)) == 0, "power of two only capacity");
 
     struct alignas(kCacheLine) Cell {
@@ -21,7 +22,7 @@ class BoundedMPSC {
     };
 
 public:
-    BoundedMPSC() {
+    StaticBoundedMPSC() {
         for (std::size_t i = 0; i < CapacityPow2; ++i) {
             cells_[i].seq.store(i, std::memory_order_relaxed);
         }
@@ -29,10 +30,10 @@ public:
         tail_.store(0, std::memory_order_relaxed);
     }
 
-    BoundedMPSC(const BoundedMPSC&) = delete;
-    BoundedMPSC& operator=(const BoundedMPSC&) = delete;
+    StaticBoundedMPSC(const StaticBoundedMPSC&) = delete;
+    StaticBoundedMPSC& operator=(const StaticBoundedMPSC&) = delete;
 
-    ~BoundedMPSC() {
+    ~StaticBoundedMPSC() {
         T tmp;
         while (try_pop(tmp)) {}
     }
@@ -83,6 +84,23 @@ private:
     alignas(kCacheLine) std::atomic<std::size_t> head_;
     alignas(kCacheLine) std::atomic<std::size_t> tail_;
     alignas(kCacheLine) Cell cells_[CapacityPow2];
+};
+
+class DynamicBoundedMPSC final {
+public:
+    explicit DynamicBoundedMPSC(std::size_t capacity_pow2) noexcept;
+    ~DynamicBoundedMPSC();
+
+    DynamicBoundedMPSC(const DynamicBoundedMPSC&) = delete;
+    DynamicBoundedMPSC& operator=(const DynamicBoundedMPSC&) = delete;
+
+    [[nodiscard]] bool try_emplace(void* value) noexcept;
+    [[nodiscard]] bool try_push(void* value) noexcept;
+    [[nodiscard]] bool try_pop(void*& value) noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace fem::threading

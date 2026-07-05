@@ -8,7 +8,7 @@ namespace logger::mpsc {
 inline constexpr std::size_t kCacheLine = fem::threading::kCacheLine;
 
 template <class T, std::size_t CapacityPow2>
-using BoundedMPSC = fem::threading::BoundedMPSC<T, CapacityPow2>;
+using StaticBoundedMPSC = fem::threading::StaticBoundedMPSC<T, CapacityPow2>;
 
 } // namespace logger::mpsc
 

@@ -223,7 +223,7 @@ private:
     alignas(64) std::atomic<uint32_t> wakeup_seq_{0};
     alignas(64) std::atomic<uint64_t> dropped_{0};
 
-    logger::mpsc::BoundedMPSC<LogMsg<TextCap>, QCapPow2> q_{};
+    logger::mpsc::StaticBoundedMPSC<LogMsg<TextCap>, QCapPow2> q_{};
     std::thread th_;
 };
 

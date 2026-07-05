@@ -1,11 +1,9 @@
-#include "bounded_mpsc_queue.h"
+#include "mpsc_queue.h"
 
-#include "threading_log.h"
 #include "threading_constants.h"
+#include "threading_log.h"
 
 #include <bit>
-#include <atomic>
-#include <cstdint>
 #include <new>
 
 namespace fem::threading {
@@ -19,7 +17,7 @@ bool is_power_of_two(std::size_t value) noexcept {
 std::size_t sanitize_capacity_pow2(std::size_t requested_capacity) noexcept {
     if (requested_capacity == 0) {
         LOGT_WARN(LogThreading,
-            "BoundedMPSCQueue::BoundedMPSCQueue(): capacity=0, using default=%llu",
+            "DynamicBoundedMPSC::DynamicBoundedMPSC(): capacity=0, using default=%llu",
             static_cast<unsigned long long>(constants::kDefaultRemoteQueueCapacity));
         return constants::kDefaultRemoteQueueCapacity;
     }
@@ -30,7 +28,7 @@ std::size_t sanitize_capacity_pow2(std::size_t requested_capacity) noexcept {
 
     const std::size_t adjusted_capacity = std::bit_ceil(requested_capacity);
     LOGT_WARN(LogThreading,
-        "BoundedMPSCQueue::BoundedMPSCQueue(): capacity=%llu is not a power of two, using %llu",
+        "DynamicBoundedMPSC::DynamicBoundedMPSC(): capacity=%llu is not a power of two, using %llu",
         static_cast<unsigned long long>(requested_capacity),
         static_cast<unsigned long long>(adjusted_capacity));
     return adjusted_capacity;
@@ -38,7 +36,7 @@ std::size_t sanitize_capacity_pow2(std::size_t requested_capacity) noexcept {
 
 } // namespace
 
-struct BoundedMPSCQueue::Impl {
+struct DynamicBoundedMPSC::Impl {
     struct alignas(constants::kCacheLineSize) Cell {
         std::atomic<std::size_t> seq{0};
         void* value = nullptr;
@@ -68,20 +66,24 @@ struct BoundedMPSCQueue::Impl {
     std::unique_ptr<Cell[]> cells;
 };
 
-BoundedMPSCQueue::BoundedMPSCQueue(std::size_t capacity_pow2) noexcept {
+DynamicBoundedMPSC::DynamicBoundedMPSC(std::size_t capacity_pow2) noexcept {
     const std::size_t adjusted_capacity = sanitize_capacity_pow2(capacity_pow2);
     impl_.reset(new (std::nothrow) Impl(adjusted_capacity));
     if (impl_ == nullptr || !impl_->ok()) {
         impl_.reset();
         LOGT_ERROR(LogThreading,
-            "BoundedMPSCQueue::BoundedMPSCQueue(): failed to allocate queue state (capacity=%llu)",
+            "DynamicBoundedMPSC::DynamicBoundedMPSC(): failed to allocate queue state (capacity=%llu)",
             static_cast<unsigned long long>(adjusted_capacity));
     }
 }
 
-BoundedMPSCQueue::~BoundedMPSCQueue() = default;
+DynamicBoundedMPSC::~DynamicBoundedMPSC() = default;
 
-bool BoundedMPSCQueue::try_push(void* value) noexcept {
+bool DynamicBoundedMPSC::try_push(void* value) noexcept {
+    return try_emplace(value);
+}
+
+bool DynamicBoundedMPSC::try_emplace(void* value) noexcept {
     if (impl_ == nullptr) {
         return false;
     }
@@ -107,7 +109,7 @@ bool BoundedMPSCQueue::try_push(void* value) noexcept {
     }
 }
 
-bool BoundedMPSCQueue::try_pop(void*& value) noexcept {
+bool DynamicBoundedMPSC::try_pop(void*& value) noexcept {
     if (impl_ == nullptr) {
         return false;
     }
