@@ -87,7 +87,8 @@ struct EdgeInfo : public Struct {
 
 using PackedEdge = std::uint64_t;
 
-[[nodiscard]] constexpr PackedEdge pack_edge(int a, int b) noexcept {
+template<typename T>
+[[nodiscard]] constexpr PackedEdge pack_edge(T a, T b) noexcept {
     const std::uint32_t ua = static_cast<std::uint32_t>(a < b ? a : b);
     const std::uint32_t ub = static_cast<std::uint32_t>(a < b ? b : a);
     return (static_cast<PackedEdge>(ua) << 32) | static_cast<PackedEdge>(ub);

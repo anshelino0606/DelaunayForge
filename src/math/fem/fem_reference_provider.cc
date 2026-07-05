@@ -2,17 +2,13 @@
 #include "math/boundary_condition.h"
 #include "math/pde/pde_component.h"
 #include "math/fem/fem_discretization_dispatch.h"
+#include "geom/geom2d/tri.h"
+#include "geom/common_types_2d.h"
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
 
 namespace fem {
-
-static inline std::uint64_t pack_edge_key(int a, int b) {
-    const std::uint32_t lo = static_cast<std::uint32_t>(std::min(a, b));
-    const std::uint32_t hi = static_cast<std::uint32_t>(std::max(a, b));
-    return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
-}
 
 static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
     FEMMesh out;
@@ -20,11 +16,11 @@ static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
     out.elems.reserve(input.elems.size() * 4);
     out.edges_bc.reserve(input.edges_bc.size() * 2);
 
-    std::unordered_map<std::uint64_t, int> edge_to_mid;
+    std::unordered_map<PackedEdge, int> edge_to_mid;
     edge_to_mid.reserve(input.elems.size() * 3);
 
     auto midpoint_node = [&](int a, int b) -> int {
-        const std::uint64_t key = pack_edge_key(a, b);
+        const PackedEdge key = pack_edge(a, b);
         auto it = edge_to_mid.find(key);
         if (it != edge_to_mid.end()) {
             return it->second;
@@ -49,14 +45,13 @@ static FEMMesh refine_fem_mesh_uniform_(const FEMMesh& input) {
     };
 
     auto tri_area = [&](int i0, int i1, int i2) -> double {
-        const auto& A = out.nodes[(std::size_t)i0];
-        const auto& B = out.nodes[(std::size_t)i1];
-        const auto& C = out.nodes[(std::size_t)i2];
-        const double cross = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
-        return 0.5 * std::abs(cross);
+        const FEMMesh::Node& A = out.nodes[(std::size_t)i0];
+        const FEMMesh::Node& B = out.nodes[(std::size_t)i1];
+        const FEMMesh::Node& C = out.nodes[(std::size_t)i2];
+        return geom2d::tri::area(A, B, C);
     };
 
-    for (const auto& e : input.elems) {
+    for (const FEMMesh::Elem& e : input.elems) {
         const int v0 = e.v[0];
         const int v1 = e.v[1];
         const int v2 = e.v[2];
@@ -384,10 +379,10 @@ DelaunayTriangulationResult refine_delaunay_uniform(
     refined_boundary_info.reserve(input.edges.size() * 2 + input.boundary_edges.size() * 2);
     for (const auto& edge_info : input.edges) {
         if (!edge_info.on_boundary) continue;
-        input_boundary_info.emplace(pack_edge_key(edge_info.a, edge_info.b), edge_info);
+        input_boundary_info.emplace(pack_edge(edge_info.a, edge_info.b), edge_info);
     }
     for (const auto& edge : input.boundary_edges) {
-        const std::uint64_t key = pack_edge_key(edge.a, edge.b);
+        const std::uint64_t key = pack_edge(edge.a, edge.b);
         if (input_boundary_info.find(key) == input_boundary_info.end()) {
             EdgeInfo edge_info{};
             edge_info.a = std::min(edge.a, edge.b);
@@ -398,7 +393,7 @@ DelaunayTriangulationResult refine_delaunay_uniform(
     }
 
     auto midpoint_index = [&](int a, int b) -> int {
-        const std::uint64_t key = pack_edge_key(a, b);
+        const std::uint64_t key = pack_edge(a, b);
         auto it = edge_to_midpoint_idx.find(key);
         if (it != edge_to_midpoint_idx.end()) {
             return it->second;
@@ -431,7 +426,7 @@ DelaunayTriangulationResult refine_delaunay_uniform(
             child0.on_boundary = true;
             child0.tri_left = -1;
             child0.tri_right = -1;
-            refined_boundary_info[pack_edge_key(child0.a, child0.b)] = child0;
+            refined_boundary_info[pack_edge(child0.a, child0.b)] = child0;
 
             EdgeInfo child1 = bit->second;
             child1.a = std::min(idx, b);
@@ -439,7 +434,7 @@ DelaunayTriangulationResult refine_delaunay_uniform(
             child1.on_boundary = true;
             child1.tri_left = -1;
             child1.tri_right = -1;
-            refined_boundary_info[pack_edge_key(child1.a, child1.b)] = child1;
+            refined_boundary_info[pack_edge(child1.a, child1.b)] = child1;
         }
 
         return idx;
@@ -494,7 +489,7 @@ DelaunayTriangulationResult refine_delaunay_uniform(
     acc_edges.reserve(refined.triangles.size() * 3);
 
     auto add_edge = [&](int a, int b, int tri_idx) -> int {
-        const std::uint64_t key = pack_edge_key(a, b);
+        const std::uint64_t key = pack_edge(a, b);
         auto [it, inserted] = edge_index.emplace(key, static_cast<int>(acc_edges.size()));
         if (inserted) {
             AccEdge edge;
@@ -532,12 +527,12 @@ DelaunayTriangulationResult refine_delaunay_uniform(
         edge_info.tri_right = acc_edge.tri_right;
         edge_info.on_boundary = (acc_edge.tri_right == -1);
 
-        const auto child_bit = refined_boundary_info.find(pack_edge_key(acc_edge.a, acc_edge.b));
+        const auto child_bit = refined_boundary_info.find(pack_edge(acc_edge.a, acc_edge.b));
         if (child_bit != refined_boundary_info.end()) {
             edge_info.boundary_tag = child_bit->second.boundary_tag;
             edge_info.bc = child_bit->second.bc;
         } else {
-            const auto bit = input_boundary_info.find(pack_edge_key(acc_edge.a, acc_edge.b));
+            const auto bit = input_boundary_info.find(pack_edge(acc_edge.a, acc_edge.b));
             if (bit != input_boundary_info.end()) {
                 edge_info.boundary_tag = bit->second.boundary_tag;
                 edge_info.bc = bit->second.bc;

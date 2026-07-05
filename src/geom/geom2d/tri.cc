@@ -18,6 +18,23 @@ bool point_in_triangle(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec
     return !(has_neg && has_pos);
 }
 
+bool barycentric_coords(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, glm::dvec3& out_bary) {
+    const double denom = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if (std::abs(denom) <= 1e-30) return false;
+
+    out_bary.x = ((b.y - c.y) * (p.x - c.x) + (c.x - b.x) * (p.y - c.y)) / denom;
+    out_bary.y = ((c.y - a.y) * (p.x - c.x) + (a.x - c.x) * (p.y - c.y)) / denom;
+    out_bary.z = 1.0 - out_bary.x - out_bary.y;
+    return true;
+}
+
+bool barycentric_in_triangle(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, glm::dvec3& out_bary, double eps) {
+    if (!barycentric_coords(p, a, b, c, out_bary)) return false;
+    const double lo = -eps;
+    const double hi = 1.0 + eps;
+    return (out_bary.x >= lo && out_bary.x <= hi && out_bary.y >= lo && out_bary.y <= hi && out_bary.z >= lo && out_bary.z <= hi);
+}
+
 double area(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c) {
     return 0.5 * std::abs(vec::cross(b - a, c - a));
 }

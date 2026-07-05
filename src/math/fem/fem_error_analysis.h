@@ -12,107 +12,68 @@
 #include "fem_quadrature.h"
 #include "fem_assembler.h"
 #include "geom/geom2d/vec.h"
+#include "geom/geom2d/tri.h"
+#include "geom/geom2d/types.h"
 
 namespace fem {
 
-
-template<typename Real>
-static inline bool barycentric_coords(
-    Real x0, Real y0,
-    Real x1, Real y1,
-    Real x2, Real y2,
-    Real x,  Real y,
-    Real& l0, Real& l1, Real& l2
-) noexcept {
-    const Real denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
-    if (std::abs(denom) <= Real(1e-30)) return false;
-
-    l0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / denom;
-    l1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / denom;
-    l2 = Real(1) - l0 - l1;
-    return true;
-}
-
-template<typename Real>
-static inline bool barycentric_in_triangle(
-    Real x0, Real y0,
-    Real x1, Real y1,
-    Real x2, Real y2,
-    Real x,  Real y,
-    Real& l0, Real& l1, Real& l2,
-    Real eps = Real(1e-12)
-) noexcept {
-    if (!barycentric_coords<Real>(x0,y0,x1,y1,x2,y2,x,y,l0,l1,l2)) return false;
-    const Real lo = -eps;
-    const Real hi = Real(1) + eps;
-    return (l0 >= lo && l0 <= hi && l1 >= lo && l1 <= hi && l2 >= lo && l2 <= hi);
-}
-
+// We need to think how to handle those Real stuff properly. Maybe we need to create some custom vectors and matrices
+// that will take Real as template and determine this Real once in some header file. Just for consistency
 template<typename Real = double>
 struct TriLocatorT {
     const FEMMesh* mesh = nullptr;
 
-    Real xmin = 0, xmax = 0, ymin = 0, ymax = 0;
-    int nx = 0, ny = 0;
+    geom2d::TBoundingBox<Real> bbox;
+    int32_t nx = 0, ny = 0;
     std::vector<int> cell_off;   // size = nx*ny + 1
     std::vector<int> cell_tris;  // flattened tri lists
 
     void reset() {
         mesh = nullptr;
-        xmin = xmax = ymin = ymax = Real(0);
         nx = ny = 0;
         cell_off.clear();
         cell_tris.clear();
-    }
-
-    static inline int clampi(int v, int lo, int hi) {
-        return (v < lo) ? lo : (v > hi ? hi : v);
     }
 
     void build(const FEMMesh& M, int max_dim = 128) {
         mesh = &M;
         if (M.nodes.empty() || M.elems.empty()) { reset(); mesh = &M; return; }
 
-        xmin = ymin = std::numeric_limits<Real>::infinity();
-        xmax = ymax = -std::numeric_limits<Real>::infinity();
-        for (const auto& n : M.nodes) {
-            xmin = std::min(xmin, (Real)n.x);
-            xmax = std::max(xmax, (Real)n.x);
-            ymin = std::min(ymin, (Real)n.y);
-            ymax = std::max(ymax, (Real)n.y);
+        for (const FEMMesh::Node& n : M.nodes) {
+            bbox.update(n);
         }
 
         const int nt = (int)M.elems.size();
         const int base = (int)std::sqrt((double)nt);
-        nx = clampi(base + 1, 8, max_dim);
-        ny = clampi(base + 1, 8, max_dim);
+        nx = std::clamp(base + 1, 8, max_dim);
+        ny = std::clamp(base + 1, 8, max_dim);
 
-        const Real dx = (xmax - xmin) / (Real)nx;
-        const Real dy = (ymax - ymin) / (Real)ny;
+        const Real dx = bbox.dx() / (Real)nx;
+        const Real dy = bbox.dy() / (Real)ny;
 
         const int nc = nx * ny;
         std::vector<std::vector<int>> buckets((size_t)nc);
 
         for (int ti = 0; ti < nt; ++ti) {
-            const auto& E = M.elems[(size_t)ti];
-            const auto& A = M.nodes[(size_t)E.v[0]];
-            const auto& B = M.nodes[(size_t)E.v[1]];
-            const auto& C = M.nodes[(size_t)E.v[2]];
+            const FEMMesh::Elem& E = M.elems[(size_t)ti];
+            const FEMMesh::Node& A = M.nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& B = M.nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& C = M.nodes[(size_t)E.v[2]];
 
             Real tx0 = (Real)std::min({A.x, B.x, C.x});
             Real tx1 = (Real)std::max({A.x, B.x, C.x});
             Real ty0 = (Real)std::min({A.y, B.y, C.y});
             Real ty1 = (Real)std::max({A.y, B.y, C.y});
 
-            int ix0 = (dx > Real(0)) ? (int)std::floor((tx0 - xmin) / dx) : 0;
-            int ix1 = (dx > Real(0)) ? (int)std::floor((tx1 - xmin) / dx) : (nx - 1);
-            int iy0 = (dy > Real(0)) ? (int)std::floor((ty0 - ymin) / dy) : 0;
-            int iy1 = (dy > Real(0)) ? (int)std::floor((ty1 - ymin) / dy) : (ny - 1);
+            int ix0 = (dx > Real(0)) ? (int)std::floor((tx0 - bbox.mins.x) / dx) : 0;
+            int ix1 = (dx > Real(0)) ? (int)std::floor((tx1 - bbox.mins.x) / dx) : (nx - 1);
+            int iy0 = (dy > Real(0)) ? (int)std::floor((ty0 - bbox.mins.y) / dy) : 0;
+            int iy1 = (dy > Real(0)) ? (int)std::floor((ty1 - bbox.mins.y) / dy) : (ny - 1);
 
-            ix0 = clampi(ix0, 0, nx - 1);
-            ix1 = clampi(ix1, 0, nx - 1);
-            iy0 = clampi(iy0, 0, ny - 1);
-            iy1 = clampi(iy1, 0, ny - 1);
+            ix0 = std::clamp(ix0, 0, nx - 1);
+            ix1 = std::clamp(ix1, 0, nx - 1);
+            iy0 = std::clamp(iy0, 0, ny - 1);
+            iy1 = std::clamp(iy1, 0, ny - 1);
 
             for (int iy = iy0; iy <= iy1; ++iy) {
                 for (int ix = ix0; ix <= ix1; ++ix) {
@@ -139,13 +100,13 @@ struct TriLocatorT {
     int find_triangle(Real x, Real y, Real* out_l0=nullptr, Real* out_l1=nullptr, Real* out_l2=nullptr) const noexcept {
         if (!mesh || mesh->elems.empty() || nx <= 0 || ny <= 0) return -1;
 
-        const Real dx = (xmax - xmin) / (Real)nx;
-        const Real dy = (ymax - ymin) / (Real)ny;
+        const Real dx = bbox.dx() / (Real)nx;
+        const Real dy = bbox.dy() / (Real)ny;
 
-        int ix = (dx > Real(0)) ? (int)std::floor((x - xmin) / dx) : 0;
-        int iy = (dy > Real(0)) ? (int)std::floor((y - ymin) / dy) : 0;
-        ix = clampi(ix, 0, nx - 1);
-        iy = clampi(iy, 0, ny - 1);
+        int ix = (dx > Real(0)) ? (int)std::floor((x - bbox.mins.x) / dx) : 0;
+        int iy = (dy > Real(0)) ? (int)std::floor((y - bbox.mins.y) / dy) : 0;
+        ix = std::clamp(ix, 0, nx - 1);
+        iy = std::clamp(iy, 0, ny - 1);
 
         const int cell = iy * nx + ix;
         const int a = cell_off[(size_t)cell];
@@ -153,36 +114,32 @@ struct TriLocatorT {
 
         for (int k = a; k < b; ++k) {
             const int ti = cell_tris[(size_t)k];
-            const auto& E = mesh->elems[(size_t)ti];
-            const auto& P0 = mesh->nodes[(size_t)E.v[0]];
-            const auto& P1 = mesh->nodes[(size_t)E.v[1]];
-            const auto& P2 = mesh->nodes[(size_t)E.v[2]];
+            const FEMMesh::Elem& E = mesh->elems[(size_t)ti];
+            const FEMMesh::Node& P0 = mesh->nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& P1 = mesh->nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& P2 = mesh->nodes[(size_t)E.v[2]];
 
-            Real l0,l1,l2;
-            if (barycentric_in_triangle<Real>(
-                    (Real)P0.x,(Real)P0.y,(Real)P1.x,(Real)P1.y,(Real)P2.x,(Real)P2.y,
-                    x,y,l0,l1,l2)) {
-                if (out_l0) *out_l0 = l0;
-                if (out_l1) *out_l1 = l1;
-                if (out_l2) *out_l2 = l2;
+            glm::dvec3 barycentrics{0.0};
+            if (geom2d::tri::barycentric_in_triangle({x, y}, P0, P1, P2, barycentrics)) {
+                if (out_l0) *out_l0 = barycentrics.x;
+                if (out_l1) *out_l1 = barycentrics.y;
+                if (out_l2) *out_l2 = barycentrics.z;
                 return ti;
             }
         }
 
         // Fallback: brute scan (robust for points near grid boundaries).
         for (int ti = 0; ti < (int)mesh->elems.size(); ++ti) {
-            const auto& E = mesh->elems[(size_t)ti];
-            const auto& P0 = mesh->nodes[(size_t)E.v[0]];
-            const auto& P1 = mesh->nodes[(size_t)E.v[1]];
-            const auto& P2 = mesh->nodes[(size_t)E.v[2]];
+            const FEMMesh::Elem& E = mesh->elems[(size_t)ti];
+            const FEMMesh::Node& P0 = mesh->nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& P1 = mesh->nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& P2 = mesh->nodes[(size_t)E.v[2]];
 
-            Real l0,l1,l2;
-            if (barycentric_in_triangle<Real>(
-                    (Real)P0.x,(Real)P0.y,(Real)P1.x,(Real)P1.y,(Real)P2.x,(Real)P2.y,
-                    x,y,l0,l1,l2)) {
-                if (out_l0) *out_l0 = l0;
-                if (out_l1) *out_l1 = l1;
-                if (out_l2) *out_l2 = l2;
+            glm::dvec3 barycentrics{0.0};
+            if (geom2d::tri::barycentric_in_triangle({x, y}, P0, P1, P2, barycentrics)) {
+                if (out_l0) *out_l0 = (Real)barycentrics.x;
+                if (out_l1) *out_l1 = (Real)barycentrics.y;
+                if (out_l2) *out_l2 = (Real)barycentrics.z;
                 return ti;
             }
         }
@@ -204,31 +161,32 @@ static inline bool eval_p1_at(
     out_value = Real(0);
     if ((int)uh.size() != M.dof_count() || M.elems.empty()) return false;
 
-    Real l0=0,l1=0,l2=0;
+    glm::dvec3 barycentrics{0.0};
     int ti = -1;
     if (locator && locator->mesh == &M && locator->nx > 0) {
-        ti = locator->find_triangle(x, y, &l0, &l1, &l2);
+        ti = locator->find_triangle(x, y, &barycentrics.x, &barycentrics.y, &barycentrics.z);
     } else {
         // brute
         for (int t = 0; t < (int)M.elems.size(); ++t) {
-            const auto& E = M.elems[(size_t)t];
-            const auto& P0 = M.nodes[(size_t)E.v[0]];
-            const auto& P1 = M.nodes[(size_t)E.v[1]];
-            const auto& P2 = M.nodes[(size_t)E.v[2]];
-            if (barycentric_in_triangle<Real>(
-                    (Real)P0.x,(Real)P0.y,(Real)P1.x,(Real)P1.y,(Real)P2.x,(Real)P2.y,
-                    x,y,l0,l1,l2)) { ti = t; break; }
+            const FEMMesh::Elem& E = M.elems[(size_t)t];
+            const FEMMesh::Node& P0 = M.nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& P1 = M.nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& P2 = M.nodes[(size_t)E.v[2]];
+            if (geom2d::tri::barycentric_in_triangle({x, y}, P0, P1, P2, barycentrics)) { 
+                ti = t; 
+                break; 
+            }
         }
     }
 
     if (ti < 0) return false;
-    const auto& E = M.elems[(size_t)ti];
+    const FEMMesh::Elem& E = M.elems[(size_t)ti];
 
     const Real u0 = uh[(size_t)E.v[0]];
     const Real u1 = uh[(size_t)E.v[1]];
     const Real u2 = uh[(size_t)E.v[2]];
 
-    out_value = l0*u0 + l1*u1 + l2*u2;
+    out_value = (Real)barycentrics.x*u0 + (Real)barycentrics.y*u1 + (Real)barycentrics.z*u2;
     if (out_tri) *out_tri = ti;
     return true;
 }
@@ -366,10 +324,10 @@ static inline ErrorMetricsT<Real> compute_error_metrics(
         Real l2_exact_sq = Real(0);
         Real h1_exact_sq = Real(0);
 
-        for (const auto& E : M.elems) {
-            const auto& P0 = M.nodes[(size_t)E.v[0]];
-            const auto& P1 = M.nodes[(size_t)E.v[1]];
-            const auto& P2 = M.nodes[(size_t)E.v[2]];
+        for (const FEMMesh::Elem& E : M.elems) {
+            const FEMMesh::Node& P0 = M.nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& P1 = M.nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& P2 = M.nodes[(size_t)E.v[2]];
 
             const Real x0 = (Real)P0.x, y0 = (Real)P0.y;
             const Real x1 = (Real)P1.x, y1 = (Real)P1.y;
@@ -549,10 +507,10 @@ static inline ErrorMetricsT<Real> compute_error_vs_reference(
         fine_gux.assign(M_fine.elems.size(), Real(0));
         fine_guy.assign(M_fine.elems.size(), Real(0));
         for (std::size_t ti = 0; ti < M_fine.elems.size(); ++ti) {
-            const auto& E = M_fine.elems[ti];
-            const auto& P0 = M_fine.nodes[(size_t)E.v[0]];
-            const auto& P1 = M_fine.nodes[(size_t)E.v[1]];
-            const auto& P2 = M_fine.nodes[(size_t)E.v[2]];
+            const FEMMesh::Elem& E = M_fine.elems[ti];
+            const FEMMesh::Node& P0 = M_fine.nodes[(size_t)E.v[0]];
+            const FEMMesh::Node& P1 = M_fine.nodes[(size_t)E.v[1]];
+            const FEMMesh::Node& P2 = M_fine.nodes[(size_t)E.v[2]];
 
             Real grad_phi[3][2];
             compute_p1_gradients<Real>((Real)P0.x,(Real)P0.y,(Real)P1.x,(Real)P1.y,(Real)P2.x,(Real)P2.y, grad_phi);
@@ -594,10 +552,10 @@ static inline ErrorMetricsT<Real> compute_error_vs_reference(
     Real l2_sq = Real(0);
     Real h1_sq = Real(0);
 
-    for (const auto& E : M_coarse.elems) {
-        const auto& P0 = M_coarse.nodes[(size_t)E.v[0]];
-        const auto& P1 = M_coarse.nodes[(size_t)E.v[1]];
-        const auto& P2 = M_coarse.nodes[(size_t)E.v[2]];
+    for (const FEMMesh::Elem& E : M_coarse.elems) {
+        const FEMMesh::Node& P0 = M_coarse.nodes[(size_t)E.v[0]];
+        const FEMMesh::Node& P1 = M_coarse.nodes[(size_t)E.v[1]];
+        const FEMMesh::Node& P2 = M_coarse.nodes[(size_t)E.v[2]];
 
         const Real x0 = (Real)P0.x, y0 = (Real)P0.y;
         const Real x1 = (Real)P1.x, y1 = (Real)P1.y;
@@ -629,7 +587,7 @@ static inline ErrorMetricsT<Real> compute_error_vs_reference(
             if (has_locator) {
                 tf = locator->find_triangle(xq, yq, &lf0, &lf1, &lf2);
                 if (tf < 0) continue;
-                const auto& Ef = M_fine.elems[(size_t)tf];
+                const FEMMesh::Elem& Ef = M_fine.elems[(size_t)tf];
                 uh_fine_q = (lf0*uh_fine[(size_t)Ef.v[0]] + lf1*uh_fine[(size_t)Ef.v[1]] + lf2*uh_fine[(size_t)Ef.v[2]]) - mean_fine;
             } else {
                 if (!eval_p1_at<Real>(M_fine, uh_fine, xq, yq, uh_fine_q, &tf, locator)) continue;
@@ -646,10 +604,10 @@ static inline ErrorMetricsT<Real> compute_error_vs_reference(
                     gux_f = fine_gux[(size_t)tf];
                     guy_f = fine_guy[(size_t)tf];
                 } else {
-                    const auto& Ef = M_fine.elems[(size_t)tf];
-                    const auto& F0 = M_fine.nodes[(size_t)Ef.v[0]];
-                    const auto& F1 = M_fine.nodes[(size_t)Ef.v[1]];
-                    const auto& F2 = M_fine.nodes[(size_t)Ef.v[2]];
+                    const FEMMesh::Elem& Ef = M_fine.elems[(size_t)tf];
+                    const FEMMesh::Node& F0 = M_fine.nodes[(size_t)Ef.v[0]];
+                    const FEMMesh::Node& F1 = M_fine.nodes[(size_t)Ef.v[1]];
+                    const FEMMesh::Node& F2 = M_fine.nodes[(size_t)Ef.v[2]];
                     Real grad_phi_f[3][2];
                     compute_p1_gradients<Real>((Real)F0.x,(Real)F0.y,(Real)F1.x,(Real)F1.y,(Real)F2.x,(Real)F2.y, grad_phi_f);
                     const Real uf0 = uh_fine[(size_t)Ef.v[0]];
@@ -786,10 +744,10 @@ static inline std::vector<Real> compute_residual_indicators(
     std::vector<Real> eta((size_t)M.elems.size(), Real(0));
     
     for (size_t ti = 0; ti < M.elems.size(); ++ti) {
-        const auto& E = M.elems[ti];
-        const auto& P0 = M.nodes[(size_t)E.v[0]];
-        const auto& P1 = M.nodes[(size_t)E.v[1]];
-        const auto& P2 = M.nodes[(size_t)E.v[2]];
+        const FEMMesh::Elem& E = M.elems[ti];
+        const FEMMesh::Node& P0 = M.nodes[(size_t)E.v[0]];
+        const FEMMesh::Node& P1 = M.nodes[(size_t)E.v[1]];
+        const FEMMesh::Node& P2 = M.nodes[(size_t)E.v[2]];
 
         const Real x0 = (Real)P0.x, y0 = (Real)P0.y;
         const Real x1 = (Real)P1.x, y1 = (Real)P1.y;
@@ -838,10 +796,10 @@ static inline std::vector<Real> compute_jump_indicators(
     std::vector<Real> eta((size_t)M.elems.size(), Real(0));
     
     for (size_t ti = 0; ti < M.elems.size(); ++ti) {
-        const auto& E = M.elems[ti];
-        const auto& P0 = M.nodes[(size_t)E.v[0]];
-        const auto& P1 = M.nodes[(size_t)E.v[1]];
-        const auto& P2 = M.nodes[(size_t)E.v[2]];
+        const FEMMesh::Elem& E = M.elems[ti];
+        const FEMMesh::Node& P0 = M.nodes[(size_t)E.v[0]];
+        const FEMMesh::Node& P1 = M.nodes[(size_t)E.v[1]];
+        const FEMMesh::Node& P2 = M.nodes[(size_t)E.v[2]];
 
         const Real x0 = (Real)P0.x, y0 = (Real)P0.y;
         const Real x1 = (Real)P1.x, y1 = (Real)P1.y;

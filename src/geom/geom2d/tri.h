@@ -7,6 +7,9 @@ namespace fem::geom2d::tri {
 
 bool point_in_triangle(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c);
 
+bool barycentric_coords(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, glm::dvec3& out_bary);
+bool barycentric_in_triangle(const glm::dvec2& p, const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c, glm::dvec3& out_bary, double eps = 1e-12);
+
 double area(const glm::dvec2& a, const glm::dvec2& b, const glm::dvec2& c);
 
 void shape_coefficients(const glm::dvec2& p0, const glm::dvec2& p1, const glm::dvec2& p2, glm::dvec3& out_b, glm::dvec3& out_c);
