@@ -17,7 +17,7 @@ class BoundedMPSC {
 
     struct alignas(kCacheLine) Cell {
         std::atomic<std::size_t> seq;
-        std::aligned_storage_t<sizeof(T), alignof(T)> storage;
+        alignas(T) std::byte storage[sizeof(T)];
     };
 
 public:
@@ -47,7 +47,7 @@ public:
 
             if (dif == 0) {
                 if (head_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
-                    ::new (&c.storage) T(std::forward<Args>(args)...);
+                    ::new (static_cast<void*>(c.storage)) T(std::forward<Args>(args)...);
                     c.seq.store(pos + 1, std::memory_order_release);
                     return true;
                 }
@@ -72,7 +72,7 @@ public:
             return false;
         }
 
-        T* ptr = std::launder(reinterpret_cast<T*>(&c.storage));
+        T* ptr = std::launder(reinterpret_cast<T*>(c.storage));
         out = std::move(*ptr);
         ptr->~T();
 
