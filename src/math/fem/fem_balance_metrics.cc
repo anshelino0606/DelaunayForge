@@ -12,39 +12,12 @@
 #include "math/fem/fem_quadrature.h"
 #include "math/math_.h"
 #include "geom/geom2d/vec.h"
+#include "geom/geom2d/types.h"
+#include "geom/common_types_2d.h"
 
 namespace fem {
 
 namespace {
-
-static inline std::uint64_t pack_edge(Index a, Index b) noexcept {
-    const auto lo = std::min(a, b);
-    const auto hi = std::max(a, b);
-    return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
-}
-
-enum class Side : int { None=0, Left=1, Right=2, Bottom=3, Top=4 };
-
-static Side classify_side(double ax, double ay, double bx, double by,
-                          double xmin, double xmax, double ymin, double ymax,
-                          double tol) noexcept {
-    if (std::abs(ax-xmin)<=tol && std::abs(bx-xmin)<=tol) return Side::Left;
-    if (std::abs(ax-xmax)<=tol && std::abs(bx-xmax)<=tol) return Side::Right;
-    if (std::abs(ay-ymin)<=tol && std::abs(by-ymin)<=tol) return Side::Bottom;
-    if (std::abs(ay-ymax)<=tol && std::abs(by-ymax)<=tol) return Side::Top;
-    return Side::None;
-}
-
-static void outward_normal(Side s, double& nx, double& ny) noexcept {
-    nx = ny = 0.0;
-    switch (s) {
-        case Side::Left:   nx = -1; break;
-        case Side::Right:  nx =  1; break;
-        case Side::Bottom: ny = -1; break;
-        case Side::Top:    ny =  1; break;
-        default: break;
-    }
-}
 
 struct TriInfo { Index v0, v1, v2; bool boundary = true; };
 
@@ -65,24 +38,22 @@ BalanceMetrics compute_balance_metrics(
     if (u.size() != mesh.dof_count() || mesh.nodes.empty() || mesh.elems.empty())
         return out;
 
-    out.xmin = out.ymin =  math::DINF;
-    out.xmax = out.ymax = -math::DINF;
-    for (const auto& n : mesh.nodes) {
-        out.xmin = std::min(out.xmin, n.x); out.xmax = std::max(out.xmax, n.x);
-        out.ymin = std::min(out.ymin, n.y); out.ymax = std::max(out.ymax, n.y);
+    geom2d::BoundingBox bbox;
+
+    for (const FEMMesh::Node& n : mesh.nodes) {
+        bbox.update(n);
     }
-    const double bbmax = std::max({1.0, std::abs(out.xmax-out.xmin), std::abs(out.ymax-out.ymin)});
-    const double tol   = (cfg.outer_classify_tol > 0.0) ? cfg.outer_classify_tol : 1e-9 * bbmax;
+    const double tol   = (cfg.outer_classify_tol > 0.0) ? cfg.outer_classify_tol : 1e-9;
 
     out.u_min = *std::min_element(u.begin(), u.end());
     out.u_max = *std::max_element(u.begin(), u.end());
 
-    std::unordered_map<std::uint64_t, TriInfo> adj;
+    std::unordered_map<PackedEdge, TriInfo> adj;
     adj.reserve(mesh.elems.size() * 3);
     for (std::size_t ti = 0; ti < mesh.elems.size(); ++ti) {
-        const auto& E = mesh.elems[ti];
+        const FEMMesh::Elem& E = mesh.elems[ti];
         for (int e = 0; e < 3; ++e) {
-            auto key = pack_edge(E.v[e], E.v[(e+1)%3]);
+            PackedEdge key = pack_edge(E.v[e], E.v[(e+1)%3]);
             auto it = adj.find(key);
             if (it == adj.end())
                 adj.emplace(key, TriInfo{E.v[0], E.v[1], E.v[2], true});
@@ -124,9 +95,8 @@ BalanceMetrics compute_balance_metrics(
         const double mx = 0.5*(A.x+B.x), my = 0.5*(A.y+B.y);
         const double uavg = 0.5*(u[to_size(e.a)] + u[to_size(e.b)]);
 
-        const Side side = classify_side(A.x,A.y, B.x,B.y,
-                                        out.xmin,out.xmax, out.ymin,out.ymax, tol);
-        const bool is_outer = (side != Side::None);
+        const geom2d::Side side = bbox.classify_side(A, B, tol);
+        const bool is_outer = (side != geom2d::Side::Unknown);
 
         double q_out_int = 0.0;
 
@@ -136,7 +106,7 @@ BalanceMetrics compute_balance_metrics(
             q_out_int = (-e.gN) * L;
         } else {
             // Dirichlet: reconstruct from element gradient
-            uint64_t key = pack_edge(e.a, e.b);
+            PackedEdge key = pack_edge(e.a, e.b);
             auto it = adj.find(key);
             if (it == adj.end() || !it->second.boundary) continue;
 
@@ -153,21 +123,21 @@ BalanceMetrics compute_balance_metrics(
             const double gux = u[to_size(v0)]*grad_phi[0][0] + u[to_size(v1)]*grad_phi[1][0] + u[to_size(v2)]*grad_phi[2][0];
             const double guy = u[to_size(v0)]*grad_phi[0][1] + u[to_size(v1)]*grad_phi[1][1] + u[to_size(v2)]*grad_phi[2][1];
 
-            double nx = 0.0, ny = 0.0;
+            glm::dvec2 n{ 0.0 };
             if (is_outer) {
-                outward_normal(side, nx, ny);
+                n = bbox.outward_normal(side);
             } else {
                 continue; // inner Dirichlet unusual
             }
-            q_out_int = -a(mx,my) * (gux*nx + guy*ny) * L;
+            q_out_int = -a(mx,my) * (gux*n.x + guy*n.y) * L;
         }
 
         if (is_outer) {
             switch (side) {
-                case Side::Left:   fl += q_out_int; break;
-                case Side::Right:  fr += q_out_int; break;
-                case Side::Bottom: fb += q_out_int; break;
-                case Side::Top:    ft += q_out_int; break;
+                case geom2d::Side::Left:   fl += q_out_int; break;
+                case geom2d::Side::Right:  fr += q_out_int; break;
+                case geom2d::Side::Bottom: fb += q_out_int; break;
+                case geom2d::Side::Top:    ft += q_out_int; break;
                 default: break;
             }
         } else {

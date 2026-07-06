@@ -2,7 +2,6 @@
 #define FEM_ASSEMBLER
 
 #include "fem_problem.h"
-#include "fem_element_p1.h"
 #include "math/differential_equation_solution.h"
 #include "math/types.h"
 
