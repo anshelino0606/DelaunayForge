@@ -49,6 +49,7 @@ void Shader::create(const InitInfo& info) {
     shader_desc.sourceType = LLGL::ShaderSourceType::BinaryBuffer;
 #elif defined(__APPLE__)
     shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
+    shader_desc.profile = "2.4";
 #endif
     
     if (shader_desc.type == LLGL::ShaderType::Vertex && info.vertex_attribs) {
