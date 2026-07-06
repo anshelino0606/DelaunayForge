@@ -12,43 +12,46 @@ constexpr const char* dxil_profile_name = "sm_6_6";
 constexpr const char* metal_profile_name = "metal_2_4";
 
 LoadedModuleInfo ICompilationSession::load_module(const std::string& relative_path) {
-    std::vector<uint8_t> blob_data;
-    std::string ir_path = get_cached_shader_ir_path(relative_path);
-    std::string shader_code_path = FileSystem::absolute_path_from_source(get_shader_path(relative_path));
-    FileSystem::read(ir_path, blob_data);
-
     Session* session = handle();
-
-    ComPtr<IRBlob> ir_blob;
-    ir_blob.attach(new VectorBlob(std::move(blob_data)));
-
-    Slang::ComPtr<slang::IBlob> diagnostics_blob;
-
     LoadedModuleInfo module_info;
+    ComPtr<DiagnosticsBlob> diagnostics_blob;
 
-    if (session->isBinaryModuleUpToDate(relative_path.c_str(), ir_blob)) {
-        module_info.module = session->loadModuleFromIRBlob(
-            relative_path.c_str(), 
-            shader_code_path.c_str(),
-            ir_blob,
-            diagnostics_blob.writeRef()
-        );
-        log_diagnostics(diagnostics_blob);
+    std::string ir_path = get_cached_shader_ir_path(relative_path);
+    
+    if (FileSystem::exists(ir_path)) {
+        std::vector<uint8_t> blob_data;
+        std::string shader_code_path = FileSystem::absolute_path_from_source(get_shader_path(relative_path));
+        FileSystem::read(ir_path, blob_data);
+        
+        ComPtr<IRBlob> ir_blob;
+        ir_blob.attach(new VectorBlob(std::move(blob_data)));
+    
+        if (session->isBinaryModuleUpToDate(relative_path.c_str(), ir_blob)) {
+            module_info.module = session->loadModuleFromIRBlob(
+                relative_path.c_str(), 
+                shader_code_path.c_str(),
+                ir_blob,
+                diagnostics_blob.writeRef()
+            );
+            log_diagnostics(diagnostics_blob);
+    
+            if (!module_info.module) {
+                LOGT_ERROR(LogRenderer, "Failed to load shader cache for [%s]", relative_path.c_str());
+            } else {
+                module_info.is_cache_valid = true;
+            }
 
-        if (!module_info.module) {
-            LOGT_ERROR(LogRenderer, "Failed to load shader cache for [%s]", relative_path.c_str());
-        } else {
-            module_info.is_cache_valid = true;
+            return module_info;
         }
-    } else {
-        module_info.module = session->loadModule(
-            relative_path.c_str(),
-            diagnostics_blob.writeRef()
-        );
-        log_diagnostics(diagnostics_blob);
-        if (!module_info.module) {
-            LOGT_ERROR(LogRenderer, "Failed to load slang module [%s]", get_shader_path(relative_path).c_str());
-        }
+    }
+
+    module_info.module = session->loadModule(
+        relative_path.c_str(),
+        diagnostics_blob.writeRef()
+    );
+    log_diagnostics(diagnostics_blob);
+    if (!module_info.module) {
+        LOGT_ERROR(LogRenderer, "Failed to load slang module [%s]", get_shader_path(relative_path).c_str());
     }
 
     return module_info;
