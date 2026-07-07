@@ -139,27 +139,36 @@ bool Renderer::init(const RendererInitInfo& init_info) {
 }
 
 void Renderer::shutdown() {
+    auto release = [](auto*& resource) {
+        if (resource) {
+            g_device->Release(*resource);
+            resource = nullptr;
+        }
+    };
+
+    if (imgui_renderer_) {
+        imgui_renderer_->shutdown();
+    }
+
+    release(swap_chain_);
+    release(main_cmd_);
+    release(viewport_color_texture_);
+    release(viewport_depth_texture_);
+    release(viewport_color_readback_texture_);
+    release(viewport_render_target_);
+    release(object_pipeline_);
+    release(object_pipeline_layout_);
+    release(object_resource_heap_);
+    release(object_vs_constant_buffer_);
+    release(object_ps_constant_buffer_);
+    release(grid_vertex_buffer_);
+    release(grid_vs_constant_buffer_);
+    release(grid_ps_constant_buffer_);
+    release(grid_resource_heap_);
+    release(grid_pipeline_layout_);
+    release(grid_pipeline_);
+
     shader_manager_.reset();
-
-    g_device->Release(*swap_chain_);
-    g_device->Release(*main_cmd_);
-    g_device->Release(*viewport_color_texture_);
-    g_device->Release(*viewport_depth_texture_);
-    g_device->Release(*viewport_render_target_);
-    g_device->Release(*object_pipeline_);
-    g_device->Release(*object_pipeline_layout_);
-    g_device->Release(*object_resource_heap_);
-    g_device->Release(*object_vs_constant_buffer_);
-    g_device->Release(*object_ps_constant_buffer_);
-
-    if (grid_vertex_buffer_) g_device->Release(*grid_vertex_buffer_);
-    if (grid_vs_constant_buffer_) g_device->Release(*grid_vs_constant_buffer_);
-    if (grid_ps_constant_buffer_) g_device->Release(*grid_ps_constant_buffer_);
-    if (grid_resource_heap_) g_device->Release(*grid_resource_heap_);
-    if (grid_pipeline_layout_) g_device->Release(*grid_pipeline_layout_);
-    if (grid_pipeline_) g_device->Release(*grid_pipeline_);
-
-    imgui_renderer_->shutdown();
 
     is_initialized_ = false;
 }
@@ -275,43 +284,51 @@ void Renderer::draw(const RendererDrawInfo& draw_info) {
                 main_cmd_->PopDebugGroup();
             }
 
-            main_cmd_->PushDebugGroup("draw_object_meshes");
-            MathEntity* entity = static_cast<MathEntity*>(editor_info->selected_entity);
-            PDEComponent* pde = entity->pde_component();
+            if (!object_pipeline_ || !object_resource_heap_ || !object_vs_constant_buffer_ || !object_ps_constant_buffer_) {
+                static bool logged_missing_object_resources = false;
+                if (!logged_missing_object_resources) {
+                    LOGT_ERROR(LogRenderer, "Skipping object draw because GPU resources are incomplete");
+                    logged_missing_object_resources = true;
+                }
+            } else {
+                main_cmd_->PushDebugGroup("draw_object_meshes");
+                MathEntity* entity = static_cast<MathEntity*>(editor_info->selected_entity);
+                PDEComponent* pde = entity->pde_component();
 
-            g_device->WriteBuffer(*object_vs_constant_buffer_, 0, &viewProj, sizeof(glm::mat4x4));
+                g_device->WriteBuffer(*object_vs_constant_buffer_, 0, &viewProj, sizeof(glm::mat4x4));
 
-            main_cmd_->SetPipelineState(*object_pipeline_);
-            main_cmd_->SetResourceHeap(*object_resource_heap_);
+                main_cmd_->SetPipelineState(*object_pipeline_);
+                main_cmd_->SetResourceHeap(*object_resource_heap_);
 
-            for (MeshComponent* mesh : entity->mesh_components()) {
-                LLGL::Buffer* vertex_buffer = mesh->vertex_buffer();
-                LLGL::Buffer* index_buffer = mesh->index_buffer();
+                for (MeshComponent* mesh : entity->mesh_components()) {
+                    LLGL::Buffer* vertex_buffer = mesh->vertex_buffer();
+                    LLGL::Buffer* index_buffer = mesh->index_buffer();
 
-                if (!vertex_buffer || !index_buffer) {
-                    continue;
+                    if (!vertex_buffer || !index_buffer) {
+                        continue;
+                    }
+
+                    const DifferentialEquationSolution& solution = pde->solution(mesh);
+                    glm::vec4 ps_params;
+
+                    if (mesh->has_display_u_bounds()) {
+                        auto [u_min, u_max] = mesh->display_u_bounds();
+                        ps_params.x = u_min;
+                        ps_params.y = u_max;
+                    } else {
+                        ps_params.x = (float)solution.u_min;
+                        ps_params.y = (float)solution.u_max;
+                    }
+
+                    g_device->WriteBuffer(*object_ps_constant_buffer_, 0, &ps_params, sizeof(glm::vec4));
+
+                    main_cmd_->SetVertexBuffer(*vertex_buffer);
+                    main_cmd_->SetIndexBuffer(*index_buffer);
+                    main_cmd_->DrawIndexed(mesh->index_count(), 0);
                 }
 
-                const DifferentialEquationSolution& solution = pde->solution(mesh);
-                glm::vec4 ps_params;
-
-                if (mesh->has_display_u_bounds()) {
-                    auto [u_min, u_max] = mesh->display_u_bounds();
-                    ps_params.x = u_min;
-                    ps_params.y = u_max;
-                } else {
-                    ps_params.x = (float)solution.u_min;
-                    ps_params.y = (float)solution.u_max;
-                }
-
-                g_device->WriteBuffer(*object_ps_constant_buffer_, 0, &ps_params, sizeof(glm::vec4));
-
-                main_cmd_->SetVertexBuffer(*vertex_buffer);
-                main_cmd_->SetIndexBuffer(*index_buffer);
-                main_cmd_->DrawIndexed(mesh->index_count(), 0);
+                main_cmd_->PopDebugGroup();
             }
-
-            main_cmd_->PopDebugGroup();
         }
 
         main_cmd_->EndRenderPass();
@@ -399,6 +416,11 @@ void Renderer::create_object_pipeline() {
 
     object_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
 
+    if (!object_program_ || !object_program_->is_valid()) {
+        LOGT_ERROR(LogRenderer, "Cannot create object pipeline without valid shaders");
+        return;
+    }
+
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
 #if defined(__APPLE__)
@@ -431,6 +453,9 @@ void Renderer::create_object_pipeline() {
 
         if (report->HasErrors()) {
             LOGT_ERROR(LogRenderer, "%s", report->GetText());
+            g_device->Release(*object_pipeline_);
+            object_pipeline_ = nullptr;
+            return;
         }
     }
 
@@ -460,6 +485,11 @@ void Renderer::create_grid_pipeline() {
     constexpr const char* shader_path = "grid";
 
     grid_program_ = shader_manager_->graphics_shader_program({{ shader_path }});
+
+    if (!grid_program_ || !grid_program_->is_valid()) {
+        LOGT_ERROR(LogRenderer, "Cannot create grid pipeline without valid shaders");
+        return;
+    }
 
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.heapBindings = {
@@ -499,6 +529,9 @@ void Renderer::create_grid_pipeline() {
         const LLGL::Report* report = grid_pipeline_->GetReport();
         if (report->HasErrors()) {
             LOGT_ERROR(LogRenderer, "%s", report->GetText());
+            g_device->Release(*grid_pipeline_);
+            grid_pipeline_ = nullptr;
+            return;
         }
     }
 

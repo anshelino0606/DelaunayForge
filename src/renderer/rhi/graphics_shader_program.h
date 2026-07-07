@@ -30,6 +30,7 @@ public:
 
     const Shader& vertex_shader() const { return vertex_shader_; }
     const Shader& fragment_shader() const { return fragment_shader_; }
+    bool is_valid() const { return bool(vertex_shader_) && bool(fragment_shader_); }
 
 private:
     Shader vertex_shader_;

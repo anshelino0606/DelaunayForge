@@ -1,10 +1,126 @@
 #include "shader_.h"
+#include "log_categories.h"
 #include "renderer/device.h"
 
 #include <slang.h>
 #include <slang-com-ptr.h>
 
+#include <cctype>
+#include <cstdint>
+#include <string>
+#include <string_view>
+
 namespace fem {
+
+#if defined(__APPLE__)
+
+namespace {
+
+std::string_view metal_stage_attribute(LLGL::ShaderType type) {
+    switch (type) {
+        case LLGL::ShaderType::Vertex: return "[[vertex]]";
+        case LLGL::ShaderType::Fragment: return "[[fragment]]";
+        case LLGL::ShaderType::Compute: return "[[kernel]]";
+        default: return {};
+    }
+}
+
+std::string_view metal_stage_keyword(LLGL::ShaderType type) {
+    switch (type) {
+        case LLGL::ShaderType::Vertex: return "vertex";
+        case LLGL::ShaderType::Fragment: return "fragment";
+        case LLGL::ShaderType::Compute: return "kernel";
+        default: return {};
+    }
+}
+
+bool is_metal_identifier_character(char character) {
+    const unsigned char value = static_cast<unsigned char>(character);
+    return std::isalnum(value) != 0 || character == '_';
+}
+
+std::string resolve_metal_entry_point(
+    const std::string& source,
+    LLGL::ShaderType type,
+    const std::string& fallback
+) {
+    const std::string_view stage_attribute = metal_stage_attribute(type);
+    if (stage_attribute.empty()) {
+        return fallback;
+    }
+
+    const std::size_t attribute_position = source.find(stage_attribute);
+    if (attribute_position == std::string::npos) {
+        return fallback;
+    }
+
+    const std::size_t parameter_list_position = source.find('(', attribute_position + stage_attribute.size());
+    if (parameter_list_position == std::string::npos) {
+        return fallback;
+    }
+
+    std::size_t identifier_end = parameter_list_position;
+    while (identifier_end > attribute_position &&
+           std::isspace(static_cast<unsigned char>(source[identifier_end - 1])) != 0) {
+        --identifier_end;
+    }
+
+    std::size_t identifier_begin = identifier_end;
+    while (identifier_begin > attribute_position &&
+           is_metal_identifier_character(source[identifier_begin - 1])) {
+        --identifier_begin;
+    }
+
+    if (identifier_begin == identifier_end) {
+        return fallback;
+    }
+
+    return source.substr(identifier_begin, identifier_end - identifier_begin);
+}
+
+void normalize_metal_stage_function_attribute(std::string& source, LLGL::ShaderType type) {
+    const std::string_view stage_attribute = metal_stage_attribute(type);
+    const std::string_view stage_keyword = metal_stage_keyword(type);
+    if (stage_attribute.empty() || stage_keyword.empty()) {
+        return;
+    }
+
+    const std::size_t attribute_position = source.find(stage_attribute);
+    if (attribute_position == std::string::npos) {
+        return;
+    }
+
+    source.replace(attribute_position, stage_attribute.size(), stage_keyword);
+}
+
+void shift_metal_graphics_buffer_indices(std::string& source) {
+    std::size_t position = 0;
+    while ((position = source.find("[[buffer(", position)) != std::string::npos) {
+        constexpr std::string_view prefix = "[[buffer(";
+        const std::size_t index_begin = position + prefix.size();
+        std::size_t index_end = index_begin;
+        while (index_end < source.size() &&
+               std::isdigit(static_cast<unsigned char>(source[index_end])) != 0) {
+            ++index_end;
+        }
+
+        if (index_begin == index_end) {
+            position = index_end;
+            continue;
+        }
+
+        const uint32_t index = static_cast<uint32_t>(
+            std::stoul(source.substr(index_begin, index_end - index_begin))
+        );
+        const std::string shifted_index = std::to_string(index + 1);
+        source.replace(index_begin, index_end - index_begin, shifted_index);
+        position = index_begin + shifted_index.size();
+    }
+}
+
+} // namespace
+
+#endif
 
 Shader::Shader(const InitInfo& info) {
     create(info);
@@ -38,25 +154,85 @@ void Shader::destroy() {
 void Shader::create(const InitInfo& info) {
     destroy();
 
+    const std::string debug_name(info.debug_name);
+    const std::string requested_entry_point(info.entry_point);
+    std::string resolved_entry_point = requested_entry_point;
+
+    if (!g_device) {
+        LOGT_ERROR(LogRenderer, "Cannot create shader [%s:%s]: render device is null",
+                   debug_name.c_str(), requested_entry_point.c_str());
+        return;
+    }
+
+    if (!info.data || info.data_size == 0) {
+        LOGT_ERROR(LogRenderer, "Cannot create shader [%s:%s]: compiled shader data is empty",
+                   debug_name.c_str(), requested_entry_point.c_str());
+        return;
+    }
+
     LLGL::ShaderDescriptor shader_desc;
     shader_desc.type = info.type;
-    shader_desc.debugName = info.debug_name.data();
-    shader_desc.entryPoint = info.entry_point.data();
-    shader_desc.source = static_cast<const char*>(info.data);
-    shader_desc.sourceSize = info.data_size;
+    shader_desc.debugName = debug_name.c_str();
 
 #if defined(_WIN32)
+    shader_desc.entryPoint = resolved_entry_point.c_str();
+    shader_desc.source = static_cast<const char*>(info.data);
+    shader_desc.sourceSize = info.data_size;
     shader_desc.sourceType = LLGL::ShaderSourceType::BinaryBuffer;
 #elif defined(__APPLE__)
+    std::string metal_source(static_cast<const char*>(info.data), info.data_size);
+    if (!metal_source.empty() && metal_source.back() == '\0') {
+        metal_source.pop_back();
+    }
+
+    resolved_entry_point = resolve_metal_entry_point(metal_source, info.type, requested_entry_point);
+    normalize_metal_stage_function_attribute(metal_source, info.type);
+    if (info.type == LLGL::ShaderType::Vertex || info.type == LLGL::ShaderType::Fragment) {
+        /*
+         * LLGL binds vertex input buffers starting at Metal buffer(0). Keep
+         * explicit graphics shader buffers one slot higher to match the
+         * renderer's Metal pipeline layouts.
+         */
+        shift_metal_graphics_buffer_indices(metal_source);
+    }
+    if (resolved_entry_point != requested_entry_point) {
+        LOGT_DEBUG(
+            LogRenderer,
+            "Resolved Metal shader entry point [%s:%s] -> [%s]",
+            debug_name.c_str(),
+            requested_entry_point.c_str(),
+            resolved_entry_point.c_str()
+        );
+    }
+
+    shader_desc.entryPoint = resolved_entry_point.c_str();
+    shader_desc.source = metal_source.c_str();
+    shader_desc.sourceSize = metal_source.size();
     shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
-    shader_desc.profile = "2.4";
+    shader_desc.profile = "2.1";
 #endif
     
     if (shader_desc.type == LLGL::ShaderType::Vertex && info.vertex_attribs) {
         shader_desc.vertex = *info.vertex_attribs;
     }
 
-    handle_ = g_device->CreateShader(shader_desc);
+    LLGL::Shader* shader = g_device->CreateShader(shader_desc);
+    if (!shader) {
+        LOGT_ERROR(LogRenderer, "LLGL returned null for shader [%s:%s]",
+                   debug_name.c_str(), resolved_entry_point.c_str());
+        return;
+    }
+
+    if (const LLGL::Report* report = shader->GetReport()) {
+        if (report->HasErrors()) {
+            LOGT_ERROR(LogRenderer, "Shader [%s:%s] failed:\n%s",
+                       debug_name.c_str(), resolved_entry_point.c_str(), report->GetText());
+            g_device->Release(*shader);
+            return;
+        }
+    }
+
+    handle_ = shader;
 }
 
 } // namespace fem

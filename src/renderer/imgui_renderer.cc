@@ -7,23 +7,13 @@
 #include <imgui/imgui.h>
 #include <format>
 #include <cstdint>
+#include <vector>
 #include <glm/glm.hpp>
 
 namespace fem {
 
-constexpr uint32_t TEXTURE_ARRAY_SIZE = 16;
 constexpr uint32_t BUFFER_ALIGNMENT = 256;
 constexpr uint32_t INIT_VERTEX_COUNT = 4096;
-
-const std::vector<LLGL::VertexAttribute> g_vertex_attribs = {
-    LLGL::VertexAttribute{"position", LLGL::Format::RG32Float, 0, offsetof(ImDrawVert, pos), sizeof(ImDrawVert), 0},
-    LLGL::VertexAttribute{"texCoord", LLGL::Format::RG32Float, 1, offsetof(ImDrawVert, uv), sizeof(ImDrawVert), 0},
-#if defined(_WIN32)
-    LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UNorm, 2, offsetof(ImDrawVert, col), sizeof(ImDrawVert), 0}
-#elif defined(__APPLE__)
-    LLGL::VertexAttribute{"color", LLGL::Format::RGBA8UInt, 2, offsetof(ImDrawVert, col), sizeof(ImDrawVert), 0}
-#endif
-};
 
 bool ImGuiRenderer::init(const ImGuiRendererInitInfo& init_info) {
     if (is_initialized_) {
@@ -60,18 +50,27 @@ bool ImGuiRenderer::init(const ImGuiRendererInitInfo& init_info) {
 }
 
 void ImGuiRenderer::shutdown() {
-    g_device->Release(*pipeline_);
-    g_device->Release(*pipeline_layout_);
-    g_device->Release(*font_texture_);
-    g_device->Release(*vs_constant_buffer_);
-    
-    for (LLGL::Buffer* buffer : vertex_buffers_) {
-        g_device->Release(*buffer);
-    }
+    auto release = [](auto*& resource) {
+        if (resource) {
+            g_device->Release(*resource);
+            resource = nullptr;
+        }
+    };
 
-    for (LLGL::Buffer* buffer : index_buffers_) {
-        g_device->Release(*buffer);
+    release(pipeline_);
+    release(pipeline_layout_);
+    release(font_texture_);
+    release(vs_constant_buffer_);
+    
+    for (LLGL::Buffer*& buffer : vertex_buffers_) {
+        release(buffer);
     }
+    vertex_buffers_.clear();
+
+    for (LLGL::Buffer*& buffer : index_buffers_) {
+        release(buffer);
+    }
+    index_buffers_.clear();
 
     is_initialized_ = false;
 }
@@ -99,9 +98,11 @@ void ImGuiRenderer::draw(const ImGuiRendererDrawInfo& draw_info) {
         return;
     }
     if (!pipeline_ || !pipeline_layout_ || !vs_constant_buffer_) {
-        if (log_this_frame) {
+        static bool logged_missing_gpu_resources = false;
+        if (!logged_missing_gpu_resources) {
             LOGT_ERROR(LogRenderer, "missing GPU resources (pipeline=%p layout=%p vsCB=%p)",
                        (void*)pipeline_, (void*)pipeline_layout_, (void*)vs_constant_buffer_);
+            logged_missing_gpu_resources = true;
         }
         return;
     }
@@ -259,6 +260,11 @@ void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
         VERTEX_LAYOUT_IMGUI
     });
 
+    if (!shader_program_ || !shader_program_->is_valid()) {
+        LOGT_ERROR(LogRenderer, "Cannot create ImGui pipeline without valid shaders");
+        return;
+    }
+
     LLGL::PipelineLayoutDescriptor layout_desc;
     layout_desc.bindings = {
     #if defined(__APPLE__)
@@ -312,6 +318,8 @@ void ImGuiRenderer::create_pipeline(const LLGL::RenderPass* render_pass) {
 
         if (report->HasErrors()) {
             LOGT_ERROR(LogRenderer, "%s", report->GetText());
+            g_device->Release(*pipeline_);
+            pipeline_ = nullptr;
         }
     }
 }
@@ -330,7 +338,7 @@ void ImGuiRenderer::create_resources(LLGL::SwapChain* swap_chain) {
     LLGL::BufferDescriptor vertex_buffer_desc;
     vertex_buffer_desc.size = INIT_VERTEX_COUNT * sizeof(ImDrawVert);
     vertex_buffer_desc.bindFlags = LLGL::BindFlags::VertexBuffer;
-    vertex_buffer_desc.vertexAttribs = g_vertex_attribs;
+    vertex_buffer_desc.vertexAttribs = g_vertex_layouts[VERTEX_LAYOUT_IMGUI].inputAttribs;
     vertex_buffer_desc.cpuAccessFlags = LLGL::CPUAccessFlags::Write;
 
     LLGL::BufferDescriptor index_buffer_desc;
@@ -390,7 +398,7 @@ LLGL::Buffer* ImGuiRenderer::get_vertex_buffer(uint32_t buffer_size) {
         LLGL::BufferDescriptor vertex_buffer_desc;
         vertex_buffer_desc.size = buffer_size * 2;
         vertex_buffer_desc.bindFlags = LLGL::BindFlags::VertexBuffer;
-        vertex_buffer_desc.vertexAttribs = g_vertex_attribs;
+        vertex_buffer_desc.vertexAttribs = g_vertex_layouts[VERTEX_LAYOUT_IMGUI].inputAttribs;
         vertex_buffer_desc.cpuAccessFlags = LLGL::CPUAccessFlags::Write;
 
         vertex_buffers_[g_frame_index] = g_device->CreateBuffer(vertex_buffer_desc);
