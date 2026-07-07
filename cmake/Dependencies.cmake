@@ -33,6 +33,7 @@ FetchContent_Declare(
   LLGL
   GIT_REPOSITORY https://github.com/LukasBanana/LLGL.git
   GIT_TAG master
+  PATCH_COMMAND ${CMAKE_COMMAND} -DLLGL_SOURCE_DIR=<SOURCE_DIR> -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchLLGLMetalVersions.cmake
 )
 FetchContent_MakeAvailable(LLGL)
 

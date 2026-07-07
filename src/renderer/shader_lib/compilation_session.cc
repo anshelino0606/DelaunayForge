@@ -9,7 +9,7 @@
 namespace fem::shaderlib {
 
 constexpr const char* dxil_profile_name = "sm_6_6";
-constexpr const char* metal_profile_name = "metal_2_1";
+constexpr const char* metal_profile_name = "metal_2_4";
 
 LoadedModuleInfo ICompilationSession::load_module(const std::string& relative_path) {
     Session* session = handle();

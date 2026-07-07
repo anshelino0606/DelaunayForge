@@ -25,15 +25,6 @@ std::string_view metal_stage_attribute(LLGL::ShaderType type) {
     }
 }
 
-std::string_view metal_stage_keyword(LLGL::ShaderType type) {
-    switch (type) {
-        case LLGL::ShaderType::Vertex: return "vertex";
-        case LLGL::ShaderType::Fragment: return "fragment";
-        case LLGL::ShaderType::Compute: return "kernel";
-        default: return {};
-    }
-}
-
 bool is_metal_identifier_character(char character) {
     const unsigned char value = static_cast<unsigned char>(character);
     return std::isalnum(value) != 0 || character == '_';
@@ -76,21 +67,6 @@ std::string resolve_metal_entry_point(
     }
 
     return source.substr(identifier_begin, identifier_end - identifier_begin);
-}
-
-void normalize_metal_stage_function_attribute(std::string& source, LLGL::ShaderType type) {
-    const std::string_view stage_attribute = metal_stage_attribute(type);
-    const std::string_view stage_keyword = metal_stage_keyword(type);
-    if (stage_attribute.empty() || stage_keyword.empty()) {
-        return;
-    }
-
-    const std::size_t attribute_position = source.find(stage_attribute);
-    if (attribute_position == std::string::npos) {
-        return;
-    }
-
-    source.replace(attribute_position, stage_attribute.size(), stage_keyword);
 }
 
 void shift_metal_graphics_buffer_indices(std::string& source) {
@@ -186,7 +162,6 @@ void Shader::create(const InitInfo& info) {
     }
 
     resolved_entry_point = resolve_metal_entry_point(metal_source, info.type, requested_entry_point);
-    normalize_metal_stage_function_attribute(metal_source, info.type);
     if (info.type == LLGL::ShaderType::Vertex || info.type == LLGL::ShaderType::Fragment) {
         /*
          * LLGL binds vertex input buffers starting at Metal buffer(0). Keep
@@ -209,7 +184,7 @@ void Shader::create(const InitInfo& info) {
     shader_desc.source = metal_source.c_str();
     shader_desc.sourceSize = metal_source.size();
     shader_desc.sourceType = LLGL::ShaderSourceType::CodeString;
-    shader_desc.profile = "2.1";
+    shader_desc.profile = "2.4";
 #endif
     
     if (shader_desc.type == LLGL::ShaderType::Vertex && info.vertex_attribs) {
