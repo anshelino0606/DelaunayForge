@@ -27,6 +27,7 @@ std::string_view metal_stage_attribute(LLGL::ShaderType type) {
 
 bool is_metal_identifier_character(char character) {
     const unsigned char value = static_cast<unsigned char>(character);
+    LOGT_DEBUG(LogRenderer, "is_metal_identifier_character: char=%c value=%u", character, value);
     return std::isalnum(value) != 0 || character == '_';
 }
 
@@ -51,6 +52,7 @@ std::string resolve_metal_entry_point(
     }
 
     std::size_t identifier_end = parameter_list_position;
+    LOG_DEBUG(LogRenderer, "resolve_metal_entry_point: found stage attribute [%s] at position %zu, source: %s", stage_attribute.data(), attribute_position, source.substr(attribute_position, identifier_end - attribute_position).c_str());
     while (identifier_end > attribute_position &&
            std::isspace(static_cast<unsigned char>(source[identifier_end - 1])) != 0) {
         --identifier_end;
@@ -75,6 +77,7 @@ void shift_metal_graphics_buffer_indices(std::string& source) {
         constexpr std::string_view prefix = "[[buffer(";
         const std::size_t index_begin = position + prefix.size();
         std::size_t index_end = index_begin;
+        LOG_DEBUG(LogRenderer, "shift_metal_graphics_buffer_indices: found buffer attribute at position %zu, static_cast<unsigned char>(source[position])=%u", position, static_cast<unsigned char>(source[position]));
         while (index_end < source.size() &&
                std::isdigit(static_cast<unsigned char>(source[index_end])) != 0) {
             ++index_end;
@@ -88,6 +91,7 @@ void shift_metal_graphics_buffer_indices(std::string& source) {
         const uint32_t index = static_cast<uint32_t>(
             std::stoul(source.substr(index_begin, index_end - index_begin))
         );
+        LOG_DEBUG(LogRenderer, "shift_metal_graphics_buffer_indices: found buffer index %u", index);
         const std::string shifted_index = std::to_string(index + 1);
         source.replace(index_begin, index_end - index_begin, shifted_index);
         position = index_begin + shifted_index.size();
@@ -157,6 +161,7 @@ void Shader::create(const InitInfo& info) {
     shader_desc.sourceType = LLGL::ShaderSourceType::BinaryBuffer;
 #elif defined(__APPLE__)
     std::string metal_source(static_cast<const char*>(info.data), info.data_size);
+    LOG_DEBUG(LogRenderer, "Shader::create: metal_source size=%zu, string: %s, info.data: %p, info.data_size: %zu", metal_source.size(), metal_source.c_str(), info.data, info.data_size);
     if (!metal_source.empty() && metal_source.back() == '\0') {
         metal_source.pop_back();
     }
@@ -170,6 +175,8 @@ void Shader::create(const InitInfo& info) {
          */
         shift_metal_graphics_buffer_indices(metal_source);
     }
+    // log metal source
+    LOG_DEBUG(LogRenderer, "Shader::create: metal_source after shift_metal_graphics_buffer_indices:\n%s", metal_source.c_str());
     if (resolved_entry_point != requested_entry_point) {
         LOGT_DEBUG(
             LogRenderer,
